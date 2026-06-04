@@ -20,14 +20,23 @@
         </div>
       </section>
 
-      <section class="battlefield">
+      <section class="setup-screen" id="setupScreen" aria-live="polite">
+        <div class="setup-copy">
+          <div class="panel-title" id="setupEyebrow">Inicio</div>
+          <h2 id="setupTitle">Geometria Tactics</h2>
+          <p id="setupText">Prepara los equipos antes de entrar al edificio destruido.</p>
+        </div>
+        <div id="setupContent" class="setup-content"></div>
+        <div id="setupActions" class="setup-actions"></div>
+      </section>
+
+      <section class="battlefield hidden" id="battlefield">
         <aside class="panel initiative-panel">
           <div class="panel-title">Turnos</div>
           <div class="initiative-track" id="initiativeTrack" aria-label="Barra de iniciativa"></div>
         </aside>
 
         <section class="board-area">
-          <div class="level-tabs" id="levelTabs" aria-label="Niveles del mapa"></div>
           <div class="board-shell">
             <div class="stacked-boards" id="board" aria-label="Tableros tacticos apilados"></div>
           </div>
@@ -38,12 +47,13 @@
           <div id="unitCard" class="unit-card"></div>
           <div class="commands">
             <button id="attackBtn" type="button">Atacar</button>
-            <button id="skillBtn" type="button">Strike</button>
+            <button id="skillBtn" type="button">Habilidad</button>
             <button id="stairsUpBtn" type="button">Subir</button>
             <button id="stairsDownBtn" type="button">Bajar</button>
             <button id="endBtn" type="button">Terminar</button>
             <button id="restartBtn" type="button">Reiniciar</button>
           </div>
+          <div id="abilityMenu" class="ability-menu hidden"></div>
           <div class="panel-title small">Registro</div>
           <ol id="log" class="log" aria-live="polite"></ol>
         </aside>

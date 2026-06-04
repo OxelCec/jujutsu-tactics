@@ -1,14 +1,17 @@
 const data = window.GameData;
-const activeMap = data.maps.placeholder;
-const SIZE = activeMap.size;
-const LEVELS = activeMap.levels;
+let activeMap = data.maps.placeholder;
+let SIZE = activeMap.size;
+let LEVELS = activeMap.levels;
 const MAX_TURN = 100;
+const TEAM_BUDGET = 6;
 
 const state = {
   units: [],
   currentUnitId: null,
-  visibleLevel: 0,
+  previewLevel: 0,
   selectedAction: "move",
+  selectedAbilityId: null,
+  abilityMenuOpen: false,
   reachable: new Set(),
   attackable: new Set(),
   round: 1,
@@ -17,8 +20,24 @@ const state = {
   log: [],
 };
 
+const setup = {
+  step: "start",
+  selectedTeam: "blue",
+  selectedMapId: "placeholder",
+  teams: {
+    blue: [],
+    red: [],
+  },
+};
+
+const battlefieldEl = document.querySelector("#battlefield");
+const setupScreenEl = document.querySelector("#setupScreen");
+const setupEyebrowEl = document.querySelector("#setupEyebrow");
+const setupTitleEl = document.querySelector("#setupTitle");
+const setupTextEl = document.querySelector("#setupText");
+const setupContentEl = document.querySelector("#setupContent");
+const setupActionsEl = document.querySelector("#setupActions");
 const boardEl = document.querySelector("#board");
-const levelTabsEl = document.querySelector("#levelTabs");
 const initiativeTrackEl = document.querySelector("#initiativeTrack");
 const phaseTextEl = document.querySelector("#phaseText");
 const roundTextEl = document.querySelector("#roundText");
@@ -26,42 +45,226 @@ const unitCardEl = document.querySelector("#unitCard");
 const logEl = document.querySelector("#log");
 const attackBtn = document.querySelector("#attackBtn");
 const skillBtn = document.querySelector("#skillBtn");
+const abilityMenuEl = document.querySelector("#abilityMenu");
 const stairsUpBtn = document.querySelector("#stairsUpBtn");
 const stairsDownBtn = document.querySelector("#stairsDownBtn");
 const endBtn = document.querySelector("#endBtn");
 const restartBtn = document.querySelector("#restartBtn");
 
-function init() {
-  state.units = data.characters.map((character) => {
-    const stats = data.statistics[character.statsId];
-    const spawn = activeMap.spawns[character.id];
-    return {
-      ...character,
-      ...spawn,
-      shape: character.model.shape,
-      maxHp: stats.maxHp,
-      hp: stats.maxHp,
-      speed: stats.speed,
-      attack: stats.attack,
-      defense: stats.defense,
-      mobility: stats.mobility,
-      maxCe: stats.maxCe,
-      ce: stats.maxCe,
-      initiative: 0,
-      acted: false,
-      moved: false,
-    };
-  });
+function battleStatsForCost(cost) {
+  return {
+    maxHp: 18 + cost * 5,
+    speed: 10 + cost,
+    attack: 5 + cost,
+    defense: 1 + Math.floor(cost / 2),
+    mobility: cost >= 5 ? 4 : 3,
+    maxCe: 100,
+  };
+}
+
+function teamCost(team) {
+  return setup.teams[team].reduce((total, characterId) => {
+    const character = data.characters.find((entry) => entry.id === characterId);
+    return total + (character?.cost ?? 0);
+  }, 0);
+}
+
+function createBattleUnit(character, team, index) {
+  const stats = battleStatsForCost(character.cost);
+  const spawn = activeMap.spawns[team][index];
+  return {
+    ...character,
+    id: `${team}-${character.id}`,
+    characterId: character.id,
+    team,
+    ...spawn,
+    shape: character.model.shape,
+    maxHp: stats.maxHp,
+    hp: stats.maxHp,
+    speed: stats.speed,
+    attack: stats.attack,
+    defense: stats.defense,
+    mobility: stats.mobility,
+    maxCe: stats.maxCe,
+    ce: stats.maxCe,
+    initiative: 0,
+    acted: false,
+    moved: false,
+  };
+}
+
+function initBattle() {
+  activeMap = data.maps[setup.selectedMapId];
+  SIZE = activeMap.size;
+  LEVELS = activeMap.levels;
+  state.units = ["blue", "red"].flatMap((team) =>
+    setup.teams[team].map((characterId, index) => {
+      const character = data.characters.find((entry) => entry.id === characterId);
+      return createBattleUnit(character, team, index);
+    }),
+  );
   state.currentUnitId = null;
-  state.visibleLevel = 0;
+  state.previewLevel = 0;
   state.selectedAction = "move";
+  state.selectedAbilityId = null;
+  state.abilityMenuOpen = false;
   state.reachable.clear();
   state.attackable.clear();
   state.round = 1;
   state.turnCount = 0;
   state.gameOver = false;
   state.log = ["Empieza la batalla."];
+  setupScreenEl.classList.add("hidden");
+  battlefieldEl.classList.remove("hidden");
   advanceToNextTurn();
+}
+
+function renderSetupScreen() {
+  battlefieldEl.classList.add("hidden");
+  setupScreenEl.classList.remove("hidden");
+  setupContentEl.innerHTML = "";
+  setupActionsEl.innerHTML = "";
+  roundTextEl.textContent = "Preparacion";
+
+  if (setup.step === "start") {
+    phaseTextEl.textContent = "Listo para preparar batalla";
+    setupEyebrowEl.textContent = "Inicio";
+    setupTitleEl.textContent = "Geometria Tactics";
+    setupTextEl.textContent = "Forma dos equipos con 6 puntos cada uno y entra en el mapa.";
+    setupActionsEl.append(setupButton("Iniciar juego", () => {
+      setup.step = "blue";
+      setup.selectedTeam = "blue";
+      renderSetupScreen();
+    }));
+    return;
+  }
+
+  if (setup.step === "blue" || setup.step === "red") {
+    renderTeamSetup(setup.step);
+    return;
+  }
+
+  renderMapSetup();
+}
+
+function setupButton(text, onClick, className = "") {
+  const button = document.createElement("button");
+  button.type = "button";
+  button.textContent = text;
+  button.className = className;
+  button.addEventListener("click", onClick);
+  return button;
+}
+
+function renderTeamSetup(team) {
+  const isBlue = team === "blue";
+  const used = teamCost(team);
+  const remaining = TEAM_BUDGET - used;
+  phaseTextEl.textContent = `Seleccion del equipo ${isBlue ? "Azul" : "Rojo"}`;
+  setupEyebrowEl.textContent = isBlue ? "Equipo azul" : "Equipo rojo";
+  setupTitleEl.textContent = `Elige unidades (${used}/${TEAM_BUDGET})`;
+  setupTextEl.textContent = `Puedes elegir cualquier combinacion que no pase de ${TEAM_BUDGET} puntos.`;
+
+  const roster = document.createElement("div");
+  roster.className = "roster-grid";
+  for (const character of data.characters) {
+    const selected = setup.teams[team].includes(character.id);
+    const overBudget = !selected && character.cost > remaining;
+    const card = document.createElement("button");
+    card.type = "button";
+    card.className = `roster-card ${selected ? "selected" : ""}`;
+    card.disabled = overBudget;
+    card.addEventListener("click", () => toggleCharacter(team, character.id));
+
+    const preview = document.createElement("span");
+    preview.className = `unit-preview ${character.model.shape} ${isBlue ? "blue-unit" : "red-unit"}`;
+
+    const name = document.createElement("strong");
+    name.textContent = character.name;
+
+    const cost = document.createElement("span");
+    cost.textContent = `${character.cost} puntos`;
+
+    card.append(preview, name, cost);
+    roster.append(card);
+  }
+  setupContentEl.append(roster);
+
+  const backStep = isBlue ? "start" : "blue";
+  setupActionsEl.append(setupButton("Atras", () => {
+    setup.step = backStep;
+    setup.selectedTeam = backStep === "blue" ? "blue" : setup.selectedTeam;
+    renderSetupScreen();
+  }));
+
+  const next = setupButton(isBlue ? "Equipo rojo" : "Elegir mapa", () => {
+    setup.step = isBlue ? "red" : "map";
+    setup.selectedTeam = isBlue ? "red" : setup.selectedTeam;
+    renderSetupScreen();
+  }, "primary");
+  next.disabled = used === 0;
+  setupActionsEl.append(next);
+}
+
+function toggleCharacter(team, characterId) {
+  const selected = setup.teams[team];
+  if (selected.includes(characterId)) {
+    setup.teams[team] = selected.filter((id) => id !== characterId);
+    renderSetupScreen();
+    return;
+  }
+
+  const character = data.characters.find((entry) => entry.id === characterId);
+  if (teamCost(team) + character.cost > TEAM_BUDGET) return;
+  selected.push(characterId);
+  renderSetupScreen();
+}
+
+function renderMapSetup() {
+  phaseTextEl.textContent = "Seleccion de mapa";
+  setupEyebrowEl.textContent = "Mapa";
+  setupTitleEl.textContent = "Elige escenario";
+  setupTextEl.textContent = "Por ahora solo hay un mapa disponible.";
+
+  const mapGrid = document.createElement("div");
+  mapGrid.className = "map-grid";
+  for (const map of Object.values(data.maps)) {
+    const mapButton = document.createElement("button");
+    mapButton.type = "button";
+    mapButton.className = `map-card ${setup.selectedMapId === map.id ? "selected" : ""}`;
+    mapButton.addEventListener("click", () => {
+      setup.selectedMapId = map.id;
+      renderSetupScreen();
+    });
+    mapButton.innerHTML = `<strong>${map.name}</strong><span>${map.size}x${map.size} - ${map.levels} pisos</span>`;
+    mapGrid.append(mapButton);
+  }
+  setupContentEl.append(mapGrid, renderSelectionSummary());
+
+  setupActionsEl.append(setupButton("Atras", () => {
+    setup.step = "red";
+    setup.selectedTeam = "red";
+    renderSetupScreen();
+  }));
+  setupActionsEl.append(setupButton("Empezar batalla", initBattle, "primary"));
+}
+
+function renderSelectionSummary() {
+  const summary = document.createElement("div");
+  summary.className = "selection-summary";
+  for (const team of ["blue", "red"]) {
+    const block = document.createElement("div");
+    block.className = "summary-team";
+    const title = document.createElement("strong");
+    title.textContent = `${team === "blue" ? "Azul" : "Rojo"}: ${teamCost(team)}/${TEAM_BUDGET}`;
+    const list = document.createElement("span");
+    list.textContent = setup.teams[team]
+      .map((id) => data.characters.find((character) => character.id === id)?.name)
+      .join(", ");
+    block.append(title, list);
+    summary.append(block);
+  }
+  return summary;
 }
 
 function livingUnits() {
@@ -93,6 +296,10 @@ function getAbility(unit, abilityId = "strike") {
   return data.abilities[abilityId];
 }
 
+function getAbilities(unit) {
+  return unit.abilityIds.map((abilityId) => data.abilities[abilityId]).filter(Boolean);
+}
+
 function addLog(text) {
   state.log.unshift(text);
   state.log = state.log.slice(0, 12);
@@ -122,8 +329,10 @@ function advanceToNextTurn() {
   next.acted = false;
   next.moved = false;
   state.currentUnitId = next.id;
-  state.visibleLevel = next.z;
+  state.previewLevel = next.z;
   state.selectedAction = "move";
+  state.selectedAbilityId = null;
+  state.abilityMenuOpen = false;
   state.turnCount += 1;
   state.round = Math.floor((state.turnCount - 1) / livingUnits().length) + 1;
   calculateRanges();
@@ -149,41 +358,31 @@ function calculateRanges() {
     }
   }
 
-  for (const enemy of livingUnits().filter((target) => target.team !== unit.team && target.z === unit.z)) {
-    const distance = Math.abs(unit.x - enemy.x) + Math.abs(unit.y - enemy.y);
-    if (distance === 1) state.attackable.add(enemy.id);
+  if (!unit.acted) {
+    for (const enemy of livingUnits().filter((target) => target.team !== unit.team && target.z === unit.z)) {
+      const distance = Math.abs(unit.x - enemy.x) + Math.abs(unit.y - enemy.y);
+      if (distance === 1) state.attackable.add(enemy.id);
+    }
   }
 }
 
 function render() {
-  renderLevels();
   renderBoardStack();
   renderInitiative();
   renderPanel();
   renderLog();
 }
 
-function renderLevels() {
-  levelTabsEl.innerHTML = "";
-  for (let z = 0; z < LEVELS; z += 1) {
-    const button = document.createElement("button");
-    button.type = "button";
-    button.textContent = `Nivel ${z + 1}`;
-    button.className = z === state.visibleLevel ? "active" : "";
-    button.addEventListener("click", () => {
-      state.visibleLevel = z;
-      render();
-    });
-    levelTabsEl.append(button);
-  }
-}
-
 function renderBoardStack() {
   boardEl.innerHTML = "";
+  const unit = currentUnit();
+  const turnLevel = unit?.z ?? 0;
+  const previewLevel = state.previewLevel;
   for (let z = 0; z < LEVELS; z += 1) {
     const level = document.createElement("div");
-    level.className = `level-board level-${z} ${z === state.visibleLevel ? "focus-level" : ""}`;
+    level.className = `level-board level-${z} ${z === turnLevel ? "turn-level" : ""} ${z === previewLevel ? "focus-level" : ""} ${z !== previewLevel ? "other-turn-level" : ""}`;
     level.style.setProperty("--level-index", z);
+    level.style.zIndex = z === previewLevel ? "30" : z === turnLevel ? "20" : String(10 + z);
     level.append(renderLevelLabel(z));
 
     for (let y = 0; y < SIZE; y += 1) {
@@ -217,9 +416,11 @@ function renderTile(x, y, z) {
   if (unit && unit.x === x && unit.y === y && unit.z === z) tile.classList.add("selected");
 
   if (occupant) {
-    tile.append(renderUnit(occupant));
+    const otherFloorUnit = occupant.z !== state.previewLevel;
+    const currentTurnUnit = unit && occupant.id === unit.id;
+    tile.append(renderUnit(occupant, `${otherFloorUnit ? "other-floor-unit" : ""} ${currentTurnUnit ? "current-turn-unit" : ""}`));
     const hp = document.createElement("span");
-    hp.className = "hp";
+    hp.className = `hp ${otherFloorUnit ? "other-floor-unit" : ""}`;
     hp.innerHTML = `<span style="width:${(occupant.hp / occupant.maxHp) * 100}%"></span>`;
     tile.append(hp);
   }
@@ -228,15 +429,34 @@ function renderTile(x, y, z) {
   return tile;
 }
 
-function renderUnit(unit) {
+function renderUnit(unit, extraClass = "") {
   const el = document.createElement("span");
-  el.className = `unit ${unit.shape} ${unit.team}-unit`;
+  el.className = `unit ${unit.shape} ${unit.team}-unit ${extraClass}`.trim();
   el.title = unit.name;
   return el;
 }
 
+function portraitUrl(unit) {
+  const color = unit.team === "blue" ? "#55a6d9" : "#df6b67";
+  const shape = {
+    circle: `<circle cx="32" cy="32" r="18" fill="${color}" />`,
+    square: `<rect x="15" y="15" width="34" height="34" rx="7" fill="${color}" />`,
+    triangle: `<path d="M32 12 52 50H12Z" fill="${color}" />`,
+    diamond: `<rect x="17" y="17" width="30" height="30" rx="5" fill="${color}" transform="rotate(45 32 32)" />`,
+  }[unit.shape];
+  const svg = `
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+      <rect width="64" height="64" rx="18" fill="#1d1f17" />
+      <circle cx="32" cy="32" r="25" fill="rgba(240,239,229,0.08)" />
+      ${shape}
+      <path d="M18 48c7 5 21 5 28 0" fill="none" stroke="rgba(255,255,255,0.28)" stroke-width="3" stroke-linecap="round" />
+    </svg>
+  `;
+  return `data:image/svg+xml,${encodeURIComponent(svg)}`;
+}
+
 function renderInitiative() {
-  initiativeTrackEl.innerHTML = '<span class="ready-line"></span>';
+  initiativeTrackEl.innerHTML = '<span class="finish-marker" aria-hidden="true"></span>';
   const compact = window.matchMedia("(max-width: 980px)").matches;
 
   for (const unit of livingUnits()) {
@@ -247,9 +467,18 @@ function renderInitiative() {
       token.style.left = `${percent}%`;
       token.style.top = "65px";
     } else {
-      token.style.top = `${100 - percent}%`;
+      token.style.top = `${percent}%`;
     }
-    token.innerHTML = `<span class="mini-shape ${unit.shape} ${unit.team}-unit"></span><span>${unit.name}</span>`;
+    const portrait = document.createElement("img");
+    portrait.className = "initiative-portrait";
+    portrait.src = portraitUrl(unit);
+    portrait.alt = "";
+    portrait.draggable = false;
+
+    const name = document.createElement("span");
+    name.textContent = unit.name;
+
+    token.append(portrait, name);
     initiativeTrackEl.append(token);
   }
 }
@@ -261,10 +490,12 @@ function renderPanel() {
   if (!unit) {
     phaseTextEl.textContent = state.gameOver ? "Batalla terminada" : "Calculando turno";
     unitCardEl.innerHTML = "";
+    abilityMenuEl.classList.add("hidden");
+    abilityMenuEl.innerHTML = "";
     return;
   }
 
-  const strike = getAbility(unit);
+  const abilities = getAbilities(unit);
   phaseTextEl.textContent = `${unit.team === "blue" ? "Azul" : "Rojo"} juega con ${unit.name}.`;
   unitCardEl.innerHTML = `
     <h2>${unit.name}</h2>
@@ -278,17 +509,38 @@ function renderPanel() {
       <div class="stat"><strong>Movilidad</strong>${unit.mobility}</div>
       <div class="stat"><strong>Velocidad</strong>${unit.speed}/100</div>
     </div>
-    <div class="ability-line">${strike.name}: x${strike.attackMultiplier} ataque, ${strike.ceCost} CE</div>
+    <div class="ability-line">${abilities.length} habilidad${abilities.length === 1 ? "" : "es"} disponible${abilities.length === 1 ? "" : "s"}</div>
   `;
 
   const onStair = stairAt(unit.x, unit.y, unit.z);
   attackBtn.disabled = state.gameOver || unit.acted || !state.attackable.size;
   attackBtn.classList.toggle("active", state.selectedAction === "attack");
-  skillBtn.disabled = state.gameOver || unit.acted || unit.ce < strike.ceCost || !state.attackable.size;
-  skillBtn.classList.toggle("active", state.selectedAction === "skill");
+  skillBtn.disabled = state.gameOver || unit.acted || !abilities.length;
+  skillBtn.classList.toggle("active", state.abilityMenuOpen);
   stairsUpBtn.disabled = state.gameOver || !onStair || !onStair.levels.includes(unit.z + 1) || Boolean(unitAt(unit.x, unit.y, unit.z + 1));
   stairsDownBtn.disabled = state.gameOver || !onStair || !onStair.levels.includes(unit.z - 1) || Boolean(unitAt(unit.x, unit.y, unit.z - 1));
   endBtn.disabled = state.gameOver;
+  renderAbilityMenu(unit, abilities);
+}
+
+function renderAbilityMenu(unit, abilities) {
+  abilityMenuEl.innerHTML = "";
+  abilityMenuEl.classList.toggle("hidden", !state.abilityMenuOpen);
+  if (!state.abilityMenuOpen) return;
+
+  for (const ability of abilities) {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = state.selectedAbilityId === ability.id ? "active" : "";
+    button.disabled = state.gameOver || unit.acted || unit.ce < ability.ceCost;
+    button.innerHTML = `<strong>${ability.name}</strong><span>x${ability.attackMultiplier} ataque, ${ability.ceCost} CE</span>`;
+    button.addEventListener("click", () => {
+      state.selectedAction = "skill";
+      state.selectedAbilityId = ability.id;
+      render();
+    });
+    abilityMenuEl.append(button);
+  }
 }
 
 function renderLog() {
@@ -306,7 +558,7 @@ function handleTileClick(x, y, z) {
 
   const occupant = unitAt(x, y, z);
   if ((state.selectedAction === "attack" || state.selectedAction === "skill") && occupant?.team === enemyTeam(unit.team)) {
-    useOffense(occupant, state.selectedAction);
+    useOffense(occupant);
     return;
   }
 
@@ -315,23 +567,31 @@ function handleTileClick(x, y, z) {
     unit.x = x;
     unit.y = y;
     unit.moved = true;
-    state.visibleLevel = z;
     addLog(`${unit.name} se mueve a ${x + 1},${y + 1} en nivel ${z + 1}.`);
     calculateRanges();
     state.selectedAction = state.attackable.size ? "attack" : "move";
+    state.selectedAbilityId = null;
+    state.abilityMenuOpen = false;
     render();
   }
 }
 
-function useOffense(target, action) {
+function changePreviewLevel(direction) {
+  const nextLevel = Math.max(0, Math.min(LEVELS - 1, state.previewLevel + direction));
+  if (nextLevel === state.previewLevel) return;
+  state.previewLevel = nextLevel;
+  render();
+}
+
+function useOffense(target) {
   const unit = currentUnit();
   if (!unit || unit.acted || !state.attackable.has(target.id)) return;
 
   let damage = Math.max(1, unit.attack - target.defense);
   let label = "ataque normal";
 
-  if (action === "skill") {
-    const ability = getAbility(unit);
+  if (state.selectedAction === "skill") {
+    const ability = getAbility(unit, state.selectedAbilityId);
     if (!ability || unit.ce < ability.ceCost) return;
     unit.ce -= ability.ceCost;
     damage = Math.max(1, Math.floor(unit.attack * ability.attackMultiplier - target.defense));
@@ -340,6 +600,9 @@ function useOffense(target, action) {
 
   target.hp = Math.max(0, target.hp - damage);
   unit.acted = true;
+  unit.moved = true;
+  state.selectedAbilityId = null;
+  state.abilityMenuOpen = false;
   addLog(`${unit.name} usa ${label} contra ${target.name}: ${damage} dano.`);
   if (target.hp === 0) addLog(`${target.name} queda fuera.`);
 
@@ -361,7 +624,9 @@ function changeLevel(direction) {
 
   unit.z = nextZ;
   unit.moved = true;
-  state.visibleLevel = nextZ;
+  state.previewLevel = nextZ;
+  state.selectedAbilityId = null;
+  state.abilityMenuOpen = false;
   addLog(`${unit.name} cambia al nivel ${nextZ + 1}.`);
   calculateRanges();
   render();
@@ -381,17 +646,33 @@ function checkVictory() {
 
 attackBtn.addEventListener("click", () => {
   state.selectedAction = state.selectedAction === "attack" ? "move" : "attack";
+  state.selectedAbilityId = null;
+  state.abilityMenuOpen = false;
   render();
 });
 
 skillBtn.addEventListener("click", () => {
-  state.selectedAction = state.selectedAction === "skill" ? "move" : "skill";
+  state.abilityMenuOpen = !state.abilityMenuOpen;
+  if (!state.abilityMenuOpen && state.selectedAction === "skill") {
+    state.selectedAction = "move";
+    state.selectedAbilityId = null;
+  }
   render();
 });
 
 stairsUpBtn.addEventListener("click", () => changeLevel(1));
 stairsDownBtn.addEventListener("click", () => changeLevel(-1));
 endBtn.addEventListener("click", advanceToNextTurn);
-restartBtn.addEventListener("click", init);
+restartBtn.addEventListener("click", initBattle);
+window.addEventListener("keydown", (event) => {
+  if (event.key === "ArrowUp") {
+    event.preventDefault();
+    changePreviewLevel(1);
+  }
+  if (event.key === "ArrowDown") {
+    event.preventDefault();
+    changePreviewLevel(-1);
+  }
+});
 
-init();
+renderSetupScreen();
