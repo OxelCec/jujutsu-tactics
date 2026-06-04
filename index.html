@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Geometria Tactics</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <main class="app">
+      <section class="topbar">
+        <div>
+          <h1>Geometria Tactics</h1>
+          <p id="phaseText">Preparando batalla</p>
+        </div>
+        <div class="scoreboard" aria-label="Estado de los equipos">
+          <span class="team blue">Azul</span>
+          <span id="roundText">Ronda 1</span>
+          <span class="team red">Rojo</span>
+        </div>
+      </section>
+
+      <section class="battlefield">
+        <aside class="panel initiative-panel">
+          <div class="panel-title">Turnos</div>
+          <div class="initiative-track" id="initiativeTrack" aria-label="Barra de iniciativa"></div>
+        </aside>
+
+        <section class="board-area">
+          <div class="level-tabs" id="levelTabs" aria-label="Niveles del mapa"></div>
+          <div class="board-shell">
+            <div class="board" id="board" aria-label="Tablero tactico 10 por 10"></div>
+          </div>
+        </section>
+
+        <aside class="panel command-panel">
+          <div class="panel-title">Unidad</div>
+          <div id="unitCard" class="unit-card"></div>
+          <div class="commands">
+            <button id="attackBtn" type="button">Atacar</button>
+            <button id="stairsUpBtn" type="button">Subir</button>
+            <button id="stairsDownBtn" type="button">Bajar</button>
+            <button id="endBtn" type="button">Terminar</button>
+            <button id="restartBtn" type="button">Reiniciar</button>
+          </div>
+          <div class="panel-title small">Registro</div>
+          <ol id="log" class="log" aria-live="polite"></ol>
+        </aside>
+      </section>
+    </main>
+
+    <script src="game.js"></script>
+  </body>
+</html>
