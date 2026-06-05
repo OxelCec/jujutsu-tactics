@@ -59,15 +59,8 @@ const stairsDownBtn = document.querySelector("#stairsDownBtn");
 const endBtn = document.querySelector("#endBtn");
 const restartBtn = document.querySelector("#restartBtn");
 
-function battleStatsForCost(cost) {
-  return {
-    maxHp: 18 + cost * 5,
-    speed: 10 + cost,
-    attack: 5 + cost,
-    defense: 1 + Math.floor(cost / 2),
-    mobility: cost >= 5 ? 4 : 3,
-    maxCe: 100,
-  };
+function battleStatsForCharacter(character) {
+  return character.stats ?? data.baseStatsForCost(character.cost);
 }
 
 function teamCost(team) {
@@ -78,7 +71,7 @@ function teamCost(team) {
 }
 
 function createBattleUnit(character, team, index) {
-  const stats = battleStatsForCost(character.cost);
+  const stats = battleStatsForCharacter(character);
   const spawn = activeMap.spawns[team][index];
   return {
     ...character,
