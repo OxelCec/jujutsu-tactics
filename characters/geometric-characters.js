@@ -1,11 +1,13 @@
 window.GameData = window.GameData || {};
 
-const normalStats = {
-  maxHp: "normal",
-  speed: "normal",
-  attack: "normal",
-  defense: "normal",
-};
+function normalStats() {
+  return {
+    maxHp: "normal",
+    speed: "normal",
+    attack: "normal",
+    defense: "normal",
+  };
+}
 
 window.GameData.characters = [
   {
@@ -13,8 +15,8 @@ window.GameData.characters = [
     name: "Megumi",
     cost: 4,
     model: { shape: "diamond" },
-    statProfile: normalStats,
-    stats: window.GameData.statsFromProfile(4, normalStats),
+    statProfile: normalStats(),
+    stats: window.GameData.statsFromProfile(4, normalStats()),
     abilityIds: ["strike", "guard"],
   },
   {
@@ -22,8 +24,8 @@ window.GameData.characters = [
     name: "Toji",
     cost: 4,
     model: { shape: "triangle" },
-    statProfile: normalStats,
-    stats: window.GameData.statsFromProfile(4, normalStats),
+    statProfile: normalStats(),
+    stats: window.GameData.statsFromProfile(4, normalStats()),
     abilityIds: ["strike", "guard"],
   },
   {
@@ -31,8 +33,8 @@ window.GameData.characters = [
     name: "Mahito",
     cost: 5,
     model: { shape: "circle" },
-    statProfile: normalStats,
-    stats: window.GameData.statsFromProfile(5, normalStats),
+    statProfile: normalStats(),
+    stats: window.GameData.statsFromProfile(5, normalStats()),
     abilityIds: ["strike", "guard"],
   },
   {
@@ -40,8 +42,8 @@ window.GameData.characters = [
     name: "Yuji",
     cost: 3,
     model: { shape: "square" },
-    statProfile: normalStats,
-    stats: window.GameData.statsFromProfile(3, normalStats),
+    statProfile: normalStats(),
+    stats: window.GameData.statsFromProfile(3, normalStats()),
     abilityIds: ["strike", "guard"],
   },
   {
@@ -49,8 +51,8 @@ window.GameData.characters = [
     name: "Miwa",
     cost: 1,
     model: { shape: "circle" },
-    statProfile: normalStats,
-    stats: window.GameData.statsFromProfile(1, normalStats),
+    statProfile: normalStats(),
+    stats: window.GameData.statsFromProfile(1, normalStats()),
     abilityIds: ["strike", "guard"],
   },
   {
@@ -58,8 +60,8 @@ window.GameData.characters = [
     name: "Choso",
     cost: 3,
     model: { shape: "square" },
-    statProfile: normalStats,
-    stats: window.GameData.statsFromProfile(3, normalStats),
+    statProfile: normalStats(),
+    stats: window.GameData.statsFromProfile(3, normalStats()),
     abilityIds: ["strike", "guard"],
   },
 ];
