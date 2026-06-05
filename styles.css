@@ -25,23 +25,21 @@ body {
   margin: 0;
   min-height: 100vh;
   font-family:
-    Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI",
-    sans-serif;
-  background:
-    linear-gradient(120deg, rgba(85, 166, 217, 0.12), transparent 32%),
-    linear-gradient(240deg, rgba(208, 173, 77, 0.12), transparent 38%),
-    var(--bg);
+    "Courier New", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  background: var(--bg);
   color: var(--text);
+  image-rendering: pixelated;
 }
 
 button {
   border: 1px solid var(--line);
-  border-radius: 7px;
+  border-radius: 0;
   min-height: 38px;
   background: #363929;
   color: var(--text);
   font-weight: 700;
   cursor: pointer;
+  box-shadow: 3px 3px 0 rgba(0, 0, 0, 0.45);
 }
 
 button:hover:not(:disabled),
@@ -78,7 +76,8 @@ button:disabled {
   align-items: center;
   padding: 14px 16px;
   background: rgba(36, 37, 29, 0.92);
-  border-radius: 8px;
+  border-radius: 0;
+  box-shadow: 4px 4px 0 rgba(0, 0, 0, 0.32);
 }
 
 h1,
@@ -105,7 +104,8 @@ h1 {
 
 .team {
   padding: 6px 10px;
-  border-radius: 7px;
+  border-radius: 0;
+  border: 1px solid currentColor;
 }
 
 .team.blue {
@@ -124,8 +124,9 @@ h1 {
   margin-top: 14px;
   padding: 18px;
   border: 1px solid rgba(240, 239, 229, 0.14);
-  border-radius: 8px;
+  border-radius: 0;
   background: rgba(20, 21, 16, 0.72);
+  box-shadow: 4px 4px 0 rgba(0, 0, 0, 0.32);
 }
 
 .setup-copy h2 {
@@ -178,7 +179,7 @@ button.primary {
 .roster-card.selected,
 .map-card.selected {
   outline: 3px solid var(--stairs);
-  outline-offset: -3px;
+  outline-offset: -4px;
   background: #4c5137;
 }
 
@@ -241,7 +242,7 @@ button.primary {
   gap: 5px;
   padding: 12px;
   border: 1px solid var(--line);
-  border-radius: 7px;
+  border-radius: 0;
   background: rgba(36, 37, 29, 0.76);
 }
 
@@ -255,13 +256,14 @@ button.primary {
   gap: 14px;
   margin-top: 14px;
   padding: 14px;
-  border-radius: 8px;
+  border-radius: 0;
   background: rgba(20, 21, 16, 0.72);
+  box-shadow: 4px 4px 0 rgba(0, 0, 0, 0.32);
 }
 
 .panel {
   min-width: 0;
-  border-radius: 8px;
+  border-radius: 0;
   background: rgba(36, 37, 29, 0.96);
   padding: 12px;
 }
@@ -281,7 +283,7 @@ button.primary {
 .initiative-track {
   position: relative;
   height: 560px;
-  border-radius: 8px;
+  border-radius: 0;
   overflow: hidden;
   background:
     linear-gradient(to bottom, rgba(240, 239, 229, 0.08) 0 1px, transparent 1px 25%),
@@ -312,7 +314,7 @@ button.primary {
   gap: 8px;
   min-height: 32px;
   padding: 5px 8px 5px 5px;
-  border-radius: 7px;
+  border-radius: 0;
   background: #373a2b;
   border: 1px solid rgba(240, 239, 229, 0.18);
   transform: translateY(-50%);
@@ -328,7 +330,7 @@ button.primary {
   width: 28px;
   height: 28px;
   flex: 0 0 auto;
-  border-radius: 7px;
+  border-radius: 0;
   object-fit: cover;
   background: #1d1f17;
   border: 1px solid rgba(240, 239, 229, 0.18);
@@ -346,11 +348,12 @@ button.primary {
 }
 
 .board-shell {
-  border-radius: 8px;
+  border-radius: 0;
   min-height: 720px;
   overflow: hidden;
   padding: 12px;
-  background: linear-gradient(145deg, rgba(48, 50, 36, 0.94), rgba(32, 34, 25, 0.94));
+  background: #202219;
+  box-shadow: inset 0 0 0 4px rgba(0, 0, 0, 0.32);
 }
 
 .stacked-boards {
@@ -359,7 +362,6 @@ button.primary {
   max-width: 760px;
   height: 680px;
   margin: 0 auto;
-  perspective: 1100px;
   --floor-gap: 46px;
 }
 
@@ -375,15 +377,15 @@ button.primary {
   aspect-ratio: 1;
   padding: 7px;
   border: 1px solid rgba(240, 239, 229, 0.22);
-  border-radius: 7px;
+  border-radius: 0;
   background: rgba(46, 49, 36, 0.9);
   box-shadow:
-    0 22px 30px rgba(0, 0, 0, 0.34),
-    inset 0 0 0 1px rgba(255, 255, 255, 0.04);
+    8px 8px 0 rgba(0, 0, 0, 0.28),
+    inset 0 0 0 2px rgba(255, 255, 255, 0.04);
   transform:
     translate(-50%, -50%)
     translateY(calc((1 - var(--level-index)) * var(--floor-gap)))
-    rotateX(58deg)
+    rotateX(52deg)
     rotateZ(-38deg);
   transform-style: preserve-3d;
 }
@@ -439,12 +441,12 @@ button.primary {
   left: 0;
   min-width: 42px;
   padding: 5px 8px;
-  border-radius: 6px;
+  border-radius: 0;
   background: rgba(20, 21, 16, 0.86);
   border: 1px solid var(--line);
   color: var(--text);
   font-weight: 900;
-  transform: rotateZ(38deg) rotateX(-58deg);
+  transform: rotateZ(38deg) rotateX(-52deg);
   transform-origin: left center;
   z-index: 4;
   pointer-events: none;
@@ -456,13 +458,21 @@ button.primary {
   place-items: center;
   min-width: 0;
   border: 1px solid rgba(13, 14, 10, 0.5);
-  border-radius: 5px;
-  background: var(--tile-a);
+  border-radius: 0;
+  background:
+    linear-gradient(135deg, rgba(255, 255, 255, 0.08) 0 0.18rem, transparent 0.18rem),
+    linear-gradient(315deg, rgba(0, 0, 0, 0.16) 0 0.22rem, transparent 0.22rem),
+    var(--tile-a);
   cursor: pointer;
+  overflow: visible;
+  transform-style: preserve-3d;
 }
 
 .tile:nth-child(even) {
-  background: var(--tile-b);
+  background:
+    linear-gradient(135deg, rgba(255, 255, 255, 0.07) 0 0.18rem, transparent 0.18rem),
+    linear-gradient(315deg, rgba(0, 0, 0, 0.16) 0 0.22rem, transparent 0.22rem),
+    var(--tile-b);
 }
 
 .tile:hover {
@@ -477,6 +487,18 @@ button.primary {
   box-shadow: inset 0 0 0 3px var(--attack);
 }
 
+.tile.skill-attack {
+  box-shadow:
+    inset 0 0 0 3px var(--attack),
+    0 0 12px rgba(201, 92, 74, 0.36);
+}
+
+.tile.skill-support {
+  box-shadow:
+    inset 0 0 0 3px var(--move),
+    0 0 12px rgba(85, 167, 161, 0.36);
+}
+
 .tile.selected {
   outline: 4px solid var(--stairs);
   outline-offset: -4px;
@@ -488,28 +510,57 @@ button.primary {
 .tile.stairs::before {
   content: "";
   position: absolute;
-  inset: 8px;
-  border-radius: 3px;
+  inset: 7px;
+  border-radius: 0;
   background:
-    linear-gradient(90deg, transparent 0 28%, rgba(20, 21, 16, 0.7) 28% 34%, transparent 34%),
-    repeating-linear-gradient(to bottom, var(--stairs) 0 5px, #9c7930 5px 8px);
+    linear-gradient(90deg, transparent 0 28%, rgba(20, 21, 16, 0.8) 28% 36%, transparent 36%),
+    repeating-linear-gradient(to bottom, var(--stairs) 0 4px, #9c7930 4px 8px);
   opacity: 0.95;
 }
 
 .unit {
-  position: relative;
-  width: 62%;
-  height: 62%;
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 58%;
+  height: 58%;
   filter: drop-shadow(0 4px 2px rgba(0, 0, 0, 0.35));
-  z-index: 1;
+  z-index: 3;
+  pointer-events: none;
+  user-select: none;
+}
+
+.unit.image-model {
+  width: 72%;
+  height: 104%;
+  background: transparent;
+  color: inherit;
+  border-radius: 0;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+}
+
+.level-board .unit.image-model {
+  transform:
+    translate(-50%, -100%)
+    translateZ(6px)
+    rotateZ(38deg)
+    rotateX(-82deg);
+  transform-origin: center bottom;
+}
+
+.unit.image-model img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  object-position: center bottom;
 }
 
 .level-board .unit {
-  transform: rotateZ(38deg) rotateX(-58deg);
-}
-
-.level-board .unit.diamond {
-  transform: rotateZ(83deg) rotateX(-58deg);
+  transform: translate(-50%, -50%) rotateZ(38deg) rotateX(-52deg);
+  transform-origin: center;
 }
 
 .unit.circle,
@@ -524,24 +575,24 @@ button.primary {
 
 .unit.triangle,
 .mini-shape.triangle {
-  width: 0;
-  height: 0;
-  background: transparent !important;
-  border-left: 18px solid transparent;
-  border-right: 18px solid transparent;
-  border-bottom: 32px solid currentColor;
+  clip-path: polygon(50% 7%, 94% 92%, 6% 92%);
+}
+
+.level-board .unit.triangle {
+  transform: translate(-50%, -50%) rotateZ(38deg) rotateX(-52deg);
 }
 
 .mini-shape.triangle {
-  border-left-width: 8px;
-  border-right-width: 8px;
-  border-bottom-width: 15px;
+  background: currentColor;
 }
 
 .unit.diamond,
 .mini-shape.diamond {
-  transform: rotate(45deg);
   border-radius: 3px;
+}
+
+.level-board .unit.diamond {
+  transform: translate(-50%, -50%) rotateZ(83deg) rotateX(-52deg);
 }
 
 .blue-unit {
@@ -556,21 +607,22 @@ button.primary {
 
 .hp {
   position: absolute;
-  left: 4px;
-  right: 4px;
-  bottom: 4px;
+  left: 50%;
+  bottom: 5px;
+  width: 70%;
   height: 4px;
-  border-radius: 999px;
+  border-radius: 0;
   overflow: hidden;
   background: rgba(0, 0, 0, 0.35);
   z-index: 2;
-  transform: rotateZ(38deg) rotateX(-58deg);
+  transform: translateX(-50%) rotateZ(38deg) rotateX(-52deg);
+  transform-origin: center;
 }
 
 .hp span {
   display: block;
   height: 100%;
-  background: #f0efe5;
+  background: #df3f3b;
 }
 
 .unit.other-floor-unit,
@@ -587,7 +639,7 @@ button.primary {
 
 .unit-card {
   min-height: 158px;
-  border-radius: 8px;
+  border-radius: 0;
   background: var(--panel-2);
   border: 1px solid var(--line);
   padding: 12px;
@@ -607,7 +659,7 @@ button.primary {
 
 .stat {
   min-width: 0;
-  border-radius: 6px;
+  border-radius: 0;
   padding: 8px;
   background: rgba(20, 21, 16, 0.35);
 }
@@ -656,6 +708,49 @@ button.primary {
 .ability-menu span {
   color: var(--muted);
   font-size: 12px;
+}
+
+.tile-info {
+  display: grid;
+  gap: 8px;
+  margin-top: 10px;
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: 0;
+  background: rgba(20, 21, 16, 0.36);
+}
+
+.tile-info h3 {
+  margin: 0;
+  font-size: 14px;
+}
+
+.tile-info p {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.tile-info strong {
+  color: var(--text);
+}
+
+.inspect-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+}
+
+.inspect-grid div {
+  min-width: 0;
+  padding: 6px;
+  border-radius: 0;
+  background: rgba(36, 37, 29, 0.78);
+  font-size: 12px;
+}
+
+.inspect-grid strong {
+  display: block;
+  color: var(--muted);
 }
 
 .log {
@@ -712,7 +807,7 @@ button.primary {
     transform:
       translate(-50%, -50%)
       translateY(calc((1 - var(--level-index)) * var(--floor-gap)))
-      rotateX(58deg)
+      rotateX(52deg)
       rotateZ(-38deg);
   }
 }
@@ -766,12 +861,12 @@ button.primary {
     transform:
       translate(-50%, -50%)
       translateY(calc((1 - var(--level-index)) * var(--floor-gap)))
-      rotateX(58deg)
+      rotateX(52deg)
       rotateZ(-38deg);
   }
 
   .tile {
-    border-radius: 3px;
+    border-radius: 0;
   }
 
   .commands {

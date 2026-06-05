@@ -4,6 +4,11 @@ let SIZE = activeMap.size;
 let LEVELS = activeMap.levels;
 const MAX_TURN = 100;
 const TEAM_BUDGET = 6;
+const INITIATIVE_SCALE = 1;
+const DIRECTIONS = ["north", "east", "south", "west"];
+const TEST_UNIT_MODEL = "assets/characters/yuji-testeo.jpg";
+let initiativeFrameId = null;
+let lastInitiativeAt = 0;
 
 const state = {
   units: [],
@@ -12,8 +17,10 @@ const state = {
   selectedAction: "move",
   selectedAbilityId: null,
   abilityMenuOpen: false,
+  inspectedTile: null,
   reachable: new Set(),
   attackable: new Set(),
+  abilityTargets: new Set(),
   round: 1,
   turnCount: 0,
   gameOver: false,
@@ -46,6 +53,7 @@ const logEl = document.querySelector("#log");
 const attackBtn = document.querySelector("#attackBtn");
 const skillBtn = document.querySelector("#skillBtn");
 const abilityMenuEl = document.querySelector("#abilityMenu");
+const tileInfoEl = document.querySelector("#tileInfo");
 const stairsUpBtn = document.querySelector("#stairsUpBtn");
 const stairsDownBtn = document.querySelector("#stairsDownBtn");
 const endBtn = document.querySelector("#endBtn");
@@ -79,6 +87,8 @@ function createBattleUnit(character, team, index) {
     team,
     ...spawn,
     shape: character.model.shape,
+    facing: "south",
+    directionModels: createDirectionModels(character),
     maxHp: stats.maxHp,
     hp: stats.maxHp,
     speed: stats.speed,
@@ -94,6 +104,7 @@ function createBattleUnit(character, team, index) {
 }
 
 function initBattle() {
+  stopInitiativeClock();
   activeMap = data.maps[setup.selectedMapId];
   SIZE = activeMap.size;
   LEVELS = activeMap.levels;
@@ -108,8 +119,10 @@ function initBattle() {
   state.selectedAction = "move";
   state.selectedAbilityId = null;
   state.abilityMenuOpen = false;
+  state.inspectedTile = null;
   state.reachable.clear();
   state.attackable.clear();
+  state.abilityTargets.clear();
   state.round = 1;
   state.turnCount = 0;
   state.gameOver = false;
@@ -300,29 +313,64 @@ function getAbilities(unit) {
   return unit.abilityIds.map((abilityId) => data.abilities[abilityId]).filter(Boolean);
 }
 
+function distance2d(a, x, y) {
+  return Math.abs(a.x - x) + Math.abs(a.y - y);
+}
+
+function selectedAbility() {
+  const unit = currentUnit();
+  if (!unit || !state.selectedAbilityId) return null;
+  return getAbility(unit, state.selectedAbilityId);
+}
+
+function abilityDescription(ability) {
+  if (ability.type === "attack") return `Ataque x${ability.attackMultiplier}, ${ability.ceCost} CE`;
+  return `Apoyo/utilidad, ${ability.ceCost} CE`;
+}
+
 function addLog(text) {
   state.log.unshift(text);
   state.log = state.log.slice(0, 12);
 }
 
-function advanceToNextTurn() {
-  if (checkVictory()) {
-    render();
+function stopInitiativeClock() {
+  if (initiativeFrameId) cancelAnimationFrame(initiativeFrameId);
+  initiativeFrameId = null;
+  lastInitiativeAt = 0;
+}
+
+function startInitiativeClock() {
+  if (state.gameOver || state.currentUnitId || initiativeFrameId) return;
+  phaseTextEl.textContent = "La barra de accion avanza";
+  lastInitiativeAt = performance.now();
+  initiativeFrameId = requestAnimationFrame(tickInitiative);
+}
+
+function tickInitiative(now) {
+  if (state.gameOver || state.currentUnitId) {
+    stopInitiativeClock();
     return;
   }
 
-  state.currentUnitId = null;
-  state.reachable.clear();
-  state.attackable.clear();
+  const elapsed = Math.min(0.08, (now - lastInitiativeAt) / 1000);
+  lastInitiativeAt = now;
 
-  let ready = livingUnits().filter((unit) => unit.initiative >= MAX_TURN);
-  while (!ready.length) {
-    for (const unit of livingUnits()) {
-      unit.initiative = Math.min(MAX_TURN, unit.initiative + unit.speed);
-    }
-    ready = livingUnits().filter((unit) => unit.initiative >= MAX_TURN);
+  for (const unit of livingUnits()) {
+    unit.initiative = Math.min(MAX_TURN, unit.initiative + unit.speed * elapsed * INITIATIVE_SCALE);
   }
 
+  const ready = livingUnits().filter((unit) => unit.initiative >= MAX_TURN);
+  if (ready.length) {
+    stopInitiativeClock();
+    selectNextTurn(ready);
+    return;
+  }
+
+  renderInitiative();
+  initiativeFrameId = requestAnimationFrame(tickInitiative);
+}
+
+function selectNextTurn(ready) {
   ready.sort((a, b) => b.initiative - a.initiative || b.speed - a.speed);
   const next = ready[0];
   next.initiative = 0;
@@ -333,6 +381,7 @@ function advanceToNextTurn() {
   state.selectedAction = "move";
   state.selectedAbilityId = null;
   state.abilityMenuOpen = false;
+  state.inspectedTile = null;
   state.turnCount += 1;
   state.round = Math.floor((state.turnCount - 1) / livingUnits().length) + 1;
   calculateRanges();
@@ -340,16 +389,35 @@ function advanceToNextTurn() {
   render();
 }
 
+function advanceToNextTurn() {
+  if (checkVictory()) {
+    render();
+    return;
+  }
+
+  state.currentUnitId = null;
+  state.selectedAction = "move";
+  state.selectedAbilityId = null;
+  state.abilityMenuOpen = false;
+  state.inspectedTile = null;
+  state.reachable.clear();
+  state.attackable.clear();
+  state.abilityTargets.clear();
+  render();
+  startInitiativeClock();
+}
+
 function calculateRanges() {
   const unit = currentUnit();
   state.reachable.clear();
   state.attackable.clear();
+  state.abilityTargets.clear();
   if (!unit || state.gameOver) return;
 
   if (!unit.moved) {
     for (let y = 0; y < SIZE; y += 1) {
       for (let x = 0; x < SIZE; x += 1) {
-        const distance = Math.abs(unit.x - x) + Math.abs(unit.y - y);
+        const distance = distance2d(unit, x, y);
         const occupied = unitAt(x, y, unit.z);
         if (distance <= unit.mobility && (!occupied || occupied.id === unit.id)) {
           state.reachable.add(key(x, y, unit.z));
@@ -360,8 +428,24 @@ function calculateRanges() {
 
   if (!unit.acted) {
     for (const enemy of livingUnits().filter((target) => target.team !== unit.team && target.z === unit.z)) {
-      const distance = Math.abs(unit.x - enemy.x) + Math.abs(unit.y - enemy.y);
+      const distance = distance2d(unit, enemy.x, enemy.y);
       if (distance === 1) state.attackable.add(enemy.id);
+    }
+  }
+
+  const ability = selectedAbility();
+  if (!ability || unit.acted || unit.ce < ability.ceCost) return;
+
+  for (let y = 0; y < SIZE; y += 1) {
+    for (let x = 0; x < SIZE; x += 1) {
+      if (distance2d(unit, x, y) > ability.range) continue;
+      const occupant = unitAt(x, y, unit.z);
+      if (ability.type === "attack" && occupant?.team !== unit.team) {
+        state.abilityTargets.add(key(x, y, unit.z));
+      }
+      if (ability.type !== "attack" && (!occupant || occupant.team === unit.team)) {
+        state.abilityTargets.add(key(x, y, unit.z));
+      }
     }
   }
 }
@@ -370,6 +454,7 @@ function render() {
   renderBoardStack();
   renderInitiative();
   renderPanel();
+  renderTileInfo();
   renderLog();
 }
 
@@ -406,12 +491,14 @@ function renderTile(x, y, z) {
   const tile = document.createElement("button");
   const tileKey = key(x, y, z);
   const occupant = unitAt(x, y, z);
+  const ability = selectedAbility();
   tile.type = "button";
   tile.className = "tile";
   tile.setAttribute("aria-label", `Casilla ${x + 1}, ${y + 1}, nivel ${z + 1}`);
 
   if (stairAt(x, y, z)) tile.classList.add("stairs");
   if (state.reachable.has(tileKey)) tile.classList.add("move");
+  if (state.abilityTargets.has(tileKey)) tile.classList.add(ability?.type === "attack" ? "skill-attack" : "skill-support");
   if (occupant && state.attackable.has(occupant.id)) tile.classList.add("attack");
   if (unit && unit.x === x && unit.y === y && unit.z === z) tile.classList.add("selected");
 
@@ -430,10 +517,22 @@ function renderTile(x, y, z) {
 }
 
 function renderUnit(unit, extraClass = "") {
+  const model = unit.directionModels?.[unit.facing] ?? unit.model;
   const el = document.createElement("span");
-  el.className = `unit ${unit.shape} ${unit.team}-unit ${extraClass}`.trim();
+  el.className = `unit ${model.shape ?? "image-model"} ${unit.team}-unit ${extraClass}`.trim();
+  if (model.image) {
+    const image = document.createElement("img");
+    image.src = model.image;
+    image.alt = unit.name;
+    image.draggable = false;
+    el.append(image);
+  }
   el.title = unit.name;
   return el;
+}
+
+function createDirectionModels(character) {
+  return Object.fromEntries(DIRECTIONS.map((direction) => [direction, { image: TEST_UNIT_MODEL }]));
 }
 
 function portraitUrl(unit) {
@@ -533,10 +632,11 @@ function renderAbilityMenu(unit, abilities) {
     button.type = "button";
     button.className = state.selectedAbilityId === ability.id ? "active" : "";
     button.disabled = state.gameOver || unit.acted || unit.ce < ability.ceCost;
-    button.innerHTML = `<strong>${ability.name}</strong><span>x${ability.attackMultiplier} ataque, ${ability.ceCost} CE</span>`;
+    button.innerHTML = `<strong>${ability.name}</strong><span>${abilityDescription(ability)}</span>`;
     button.addEventListener("click", () => {
       state.selectedAction = "skill";
       state.selectedAbilityId = ability.id;
+      calculateRanges();
       render();
     });
     abilityMenuEl.append(button);
@@ -552,17 +652,81 @@ function renderLog() {
   }
 }
 
+function renderTileInfo() {
+  tileInfoEl.innerHTML = "";
+  tileInfoEl.classList.toggle("hidden", !state.inspectedTile);
+  if (!state.inspectedTile) return;
+
+  const { x, y, z } = state.inspectedTile;
+  const occupant = unitAt(x, y, z);
+  const stair = stairAt(x, y, z);
+  const tileKind = stair ? "Escalera" : "Suelo";
+  const tileState = [
+    state.reachable.has(key(x, y, z)) ? "Movimiento posible" : "",
+    state.abilityTargets.has(key(x, y, z)) ? "Objetivo de habilidad" : "",
+  ].filter(Boolean);
+
+  const title = document.createElement("h3");
+  title.textContent = `${tileKind} ${x + 1},${y + 1}, nivel ${z + 1}`;
+  tileInfoEl.append(title);
+
+  const meta = document.createElement("p");
+  meta.textContent = tileState.length ? tileState.join(" - ") : "Sin marcador activo";
+  tileInfoEl.append(meta);
+
+  if (!occupant) {
+    const empty = document.createElement("p");
+    empty.textContent = "No hay unidad en esta casilla.";
+    tileInfoEl.append(empty);
+    return;
+  }
+
+  const stats = document.createElement("div");
+  stats.className = "inspect-grid";
+  stats.innerHTML = `
+    <div><strong>Unidad</strong>${occupant.name}</div>
+    <div><strong>Equipo</strong>${occupant.team === "blue" ? "Azul" : "Rojo"}</div>
+    <div><strong>Vida</strong>${occupant.hp}/${occupant.maxHp}</div>
+    <div><strong>CE</strong>${occupant.ce}/${occupant.maxCe}</div>
+    <div><strong>Ataque</strong>${occupant.attack}</div>
+    <div><strong>Defensa</strong>${occupant.defense}</div>
+    <div><strong>Movilidad</strong>${occupant.mobility}</div>
+    <div><strong>Velocidad</strong>${occupant.speed}</div>
+  `;
+  tileInfoEl.append(stats);
+
+  const abilities = document.createElement("p");
+  abilities.innerHTML = `<strong>Habilidades</strong> ${getAbilities(occupant)
+    .map((ability) => `${ability.name} (${ability.type === "attack" ? "ataque" : "apoyo"})`)
+    .join(", ")}`;
+  tileInfoEl.append(abilities);
+}
+
 function handleTileClick(x, y, z) {
   const unit = currentUnit();
   if (!unit || state.gameOver) return;
 
+  state.inspectedTile = { x, y, z };
   const occupant = unitAt(x, y, z);
-  if ((state.selectedAction === "attack" || state.selectedAction === "skill") && occupant?.team === enemyTeam(unit.team)) {
+  const tileKey = key(x, y, z);
+  const ability = selectedAbility();
+
+  if (state.selectedAction === "attack" && occupant?.team === enemyTeam(unit.team)) {
     useOffense(occupant);
     return;
   }
 
-  const tileKey = key(x, y, z);
+  if (state.selectedAction === "skill" && ability && state.abilityTargets.has(tileKey)) {
+    if (ability.type === "attack" && occupant?.team === enemyTeam(unit.team)) {
+      useOffense(occupant);
+      return;
+    }
+    if (ability.type !== "attack") {
+      useSupportAbility(x, y, z);
+      return;
+    }
+  }
+
   if (!unit.moved && z === unit.z && state.reachable.has(tileKey) && (!occupant || occupant.id === unit.id)) {
     unit.x = x;
     unit.y = y;
@@ -573,7 +737,10 @@ function handleTileClick(x, y, z) {
     state.selectedAbilityId = null;
     state.abilityMenuOpen = false;
     render();
+    return;
   }
+
+  render();
 }
 
 function changePreviewLevel(direction) {
@@ -615,6 +782,21 @@ function useOffense(target) {
   render();
 }
 
+function useSupportAbility(x, y, z) {
+  const unit = currentUnit();
+  const ability = selectedAbility();
+  if (!unit || !ability || unit.acted || unit.ce < ability.ceCost) return;
+
+  unit.ce -= ability.ceCost;
+  unit.acted = true;
+  unit.moved = true;
+  state.selectedAbilityId = null;
+  state.abilityMenuOpen = false;
+  addLog(`${unit.name} usa ${ability.name} en ${x + 1},${y + 1}, nivel ${z + 1}.`);
+  calculateRanges();
+  render();
+}
+
 function changeLevel(direction) {
   const unit = currentUnit();
   if (!unit || state.gameOver) return;
@@ -636,6 +818,7 @@ function checkVictory() {
   const teams = new Set(livingUnits().map((unit) => unit.team));
   if (teams.size === 1) {
     const winner = [...teams][0];
+    stopInitiativeClock();
     state.gameOver = true;
     state.currentUnitId = null;
     addLog(`Victoria del equipo ${winner === "blue" ? "Azul" : "Rojo"}.`);
@@ -648,6 +831,7 @@ attackBtn.addEventListener("click", () => {
   state.selectedAction = state.selectedAction === "attack" ? "move" : "attack";
   state.selectedAbilityId = null;
   state.abilityMenuOpen = false;
+  calculateRanges();
   render();
 });
 
@@ -657,6 +841,7 @@ skillBtn.addEventListener("click", () => {
     state.selectedAction = "move";
     state.selectedAbilityId = null;
   }
+  if (!state.abilityMenuOpen) calculateRanges();
   render();
 });
 
