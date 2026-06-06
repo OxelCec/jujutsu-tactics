@@ -5,6 +5,14 @@ window.GameData.passives = {
     id: "dedication",
     name: "Dedicacion",
   },
+  focus: {
+    id: "focus",
+    name: "Focus",
+    maxFocus: 5,
+    blackFlashBaseChance: 0.1,
+    blackFlashChancePerFocus: 0.05,
+    blackFlashDamageMultiplier: 2,
+  },
 };
 
 window.GameData.abilities = {

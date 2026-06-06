@@ -9,6 +9,13 @@ function normalStats() {
   };
 }
 
+const yujiStats = {
+  maxHp: "bastantePoco",
+  speed: "bastante",
+  attack: "mucho",
+  defense: "normal",
+};
+
 window.GameData.characters = [
   {
     id: "megumi",
@@ -42,9 +49,10 @@ window.GameData.characters = [
     name: "Yuji",
     cost: 3,
     model: { shape: "square" },
-    statProfile: normalStats(),
-    stats: window.GameData.statsFromProfile(3, normalStats()),
+    statProfile: yujiStats,
+    stats: window.GameData.statsFromProfile(3, yujiStats, { mobility: 3, maxCe: 100 }),
     abilityIds: ["strike", "guard"],
+    passiveId: "focus",
   },
   {
     id: "miwa",

@@ -4,7 +4,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Geometria Tactics</title>
-    <link rel="stylesheet" href="styles.css?v=5" />
+    <link rel="stylesheet" href="styles.css?v=9" />
   </head>
   <body>
     <main class="app">
@@ -54,10 +54,19 @@
           <div class="commands">
             <button id="attackBtn" type="button">Atacar</button>
             <button id="skillBtn" type="button">Habilidad</button>
+            <button id="specialBtn" type="button">Especial</button>
             <button id="stairsUpBtn" type="button">Subir</button>
             <button id="stairsDownBtn" type="button">Bajar</button>
             <button id="endBtn" type="button">Terminar</button>
             <button id="restartBtn" type="button">Reiniciar</button>
+          </div>
+          <div id="transferPanel" class="transfer-panel hidden">
+            <label for="transferAmount">Dedos a entregar</label>
+            <div class="transfer-controls">
+              <input id="transferAmount" type="number" min="1" step="1" />
+              <button id="confirmTransferBtn" type="button">Entregar</button>
+              <button id="cancelTransferBtn" type="button">Cancelar</button>
+            </div>
           </div>
           <div id="abilityMenu" class="ability-menu hidden"></div>
           <div id="tileInfo" class="tile-info hidden"></div>
@@ -65,10 +74,10 @@
       </section>
     </main>
 
-    <script src="maps/placeholder-map.js?v=5"></script>
-    <script src="statistics/base-statistics.js?v=5"></script>
-    <script src="abilities/basic-abilities.js?v=5"></script>
-    <script src="characters/geometric-characters.js?v=5"></script>
-    <script src="game.js?v=5"></script>
+    <script src="maps/placeholder-map.js?v=9"></script>
+    <script src="statistics/base-statistics.js?v=9"></script>
+    <script src="abilities/basic-abilities.js?v=9"></script>
+    <script src="characters/geometric-characters.js?v=9"></script>
+    <script src="game.js?v=9"></script>
   </body>
 </html>

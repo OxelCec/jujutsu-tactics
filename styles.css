@@ -57,9 +57,9 @@ button:disabled {
 }
 
 .app {
-  width: min(1280px, calc(100vw - 28px));
+  width: min(1460px, calc(100vw - 24px));
   margin: 0 auto;
-  padding: 18px 0;
+  padding: 12px 0;
 }
 
 .topbar,
@@ -252,10 +252,11 @@ button.primary {
 
 .battlefield {
   display: grid;
-  grid-template-columns: 260px minmax(420px, 1fr) 280px;
-  gap: 14px;
-  margin-top: 14px;
-  padding: 14px;
+  grid-template-columns: 240px minmax(520px, 1fr) 300px;
+  align-items: start;
+  gap: 12px;
+  margin-top: 12px;
+  padding: 12px;
   border-radius: 0;
   background: rgba(20, 21, 16, 0.72);
   box-shadow: 4px 4px 0 rgba(0, 0, 0, 0.32);
@@ -265,7 +266,13 @@ button.primary {
   min-width: 0;
   border-radius: 0;
   background: rgba(36, 37, 29, 0.96);
-  padding: 12px;
+  padding: 10px;
+}
+
+.roster-panel,
+.command-panel {
+  max-height: calc(100vh - 110px);
+  overflow: auto;
 }
 
 .panel-title {
@@ -433,9 +440,9 @@ button.primary {
 
 .board-shell {
   border-radius: 0;
-  min-height: 720px;
-  overflow: hidden;
-  padding: 12px;
+  min-height: 630px;
+  overflow: visible;
+  padding: 10px;
   background: #202219;
   box-shadow: inset 0 0 0 4px rgba(0, 0, 0, 0.32);
 }
@@ -444,9 +451,9 @@ button.primary {
   position: relative;
   width: min(80vh, 100%);
   max-width: 760px;
-  height: 680px;
+  height: 590px;
   margin: 0 auto;
-  --floor-gap: 46px;
+  --floor-gap: 36px;
 }
 
 .level-board {
@@ -457,7 +464,7 @@ button.primary {
   display: grid;
   grid-template-columns: repeat(10, minmax(24px, 1fr));
   gap: 3px;
-  width: min(58vh, 560px);
+  width: min(62vh, 560px);
   aspect-ratio: 1;
   padding: 7px;
   border: 1px solid rgba(240, 239, 229, 0.22);
@@ -581,6 +588,12 @@ button.primary {
   box-shadow:
     inset 0 0 0 3px var(--move),
     0 0 12px rgba(85, 167, 161, 0.36);
+}
+
+.tile.finger-tile {
+  box-shadow:
+    inset 0 0 0 2px rgba(208, 173, 77, 0.72),
+    0 0 10px rgba(208, 173, 77, 0.28);
 }
 
 .tile.selected {
@@ -714,11 +727,41 @@ button.primary {
   opacity: 0.42;
 }
 
+.unit.dead-unit {
+  filter: grayscale(1) brightness(0.42) contrast(1.12);
+  opacity: 0.9;
+}
+
 .unit.current-turn-unit {
   filter:
     drop-shadow(0 4px 2px rgba(0, 0, 0, 0.35))
     drop-shadow(0 0 8px rgba(255, 255, 255, 0.75))
     drop-shadow(0 0 12px rgba(208, 173, 77, 0.72));
+}
+
+.finger-token {
+  position: absolute;
+  right: 6px;
+  top: 6px;
+  display: grid;
+  place-items: center;
+  min-width: 15px;
+  height: 15px;
+  padding: 0 3px;
+  border: 1px solid rgba(20, 21, 16, 0.8);
+  background: #d0ad4d;
+  color: #161712;
+  font-size: 9px;
+  font-weight: 900;
+  z-index: 8;
+  box-shadow:
+    0 0 0 2px rgba(20, 21, 16, 0.32),
+    0 4px 8px rgba(0, 0, 0, 0.38);
+  transform:
+    translateZ(18px)
+    rotateZ(38deg)
+    rotateX(-52deg);
+  pointer-events: none;
 }
 
 .unit-card {
@@ -798,6 +841,45 @@ button.primary {
 
 .commands button:last-child {
   grid-column: span 2;
+}
+
+.transfer-panel {
+  display: grid;
+  gap: 8px;
+  margin-top: 10px;
+  padding: 10px;
+  border: 1px solid rgba(208, 173, 77, 0.55);
+  background: rgba(20, 21, 16, 0.58);
+}
+
+.transfer-panel label {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.transfer-controls {
+  display: grid;
+  grid-template-columns: 74px 1fr 1fr;
+  gap: 8px;
+}
+
+.transfer-controls input {
+  min-width: 0;
+  min-height: 38px;
+  border: 1px solid var(--line);
+  border-radius: 0;
+  padding: 7px;
+  background: #161712;
+  color: var(--text);
+  font: inherit;
+  font-weight: 800;
+}
+
+.transfer-controls button {
+  min-width: 0;
+  padding-inline: 8px;
 }
 
 .ability-menu {

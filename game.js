@@ -5,6 +5,10 @@ let LEVELS = activeMap.levels;
 const MAX_TURN = 100;
 const TEAM_BUDGET = 6;
 const INITIATIVE_SCALE = 1;
+const SUKUNA_FINGER_COUNT = 7;
+const SUKUNA_TRANSFORM_FINGERS = 5;
+const SUKUNA_TRANSFORM_ATTACK_MULTIPLIER = 4;
+const SUKUNA_FINGER_DAMAGE_REDUCTION = 0.2;
 const DIRECTIONS = ["north", "east", "south", "west"];
 const TEST_UNIT_MODEL = "assets/characters/yuji-testeo.jpg";
 let initiativeFrameId = null;
@@ -17,11 +21,15 @@ const state = {
   selectedAction: "move",
   selectedAbilityId: null,
   abilityMenuOpen: false,
+  pendingTransfer: null,
   inspectedTile: null,
   inspectedUnitId: null,
   reachable: new Set(),
   attackable: new Set(),
   abilityTargets: new Set(),
+  visualEvents: [],
+  fingers: [],
+  yujiFingerState: {},
   round: 1,
   turnCount: 0,
   gameOver: false,
@@ -54,6 +62,11 @@ const unitCardEl = document.querySelector("#unitCard");
 const logEl = document.querySelector("#log");
 const attackBtn = document.querySelector("#attackBtn");
 const skillBtn = document.querySelector("#skillBtn");
+const specialBtn = document.querySelector("#specialBtn");
+const transferPanelEl = document.querySelector("#transferPanel");
+const transferAmountInput = document.querySelector("#transferAmount");
+const confirmTransferBtn = document.querySelector("#confirmTransferBtn");
+const cancelTransferBtn = document.querySelector("#cancelTransferBtn");
 const abilityMenuEl = document.querySelector("#abilityMenu");
 const tileInfoEl = document.querySelector("#tileInfo");
 const stairsUpBtn = document.querySelector("#stairsUpBtn");
@@ -92,7 +105,11 @@ function createBattleUnit(character, team, index) {
     mobility: stats.mobility,
     maxCe: stats.maxCe,
     ce: stats.maxCe,
+    focus: character.passiveId === "focus" ? 0 : null,
+    sukunaFingers: 0,
+    attackedThisTurn: false,
     activeEffects: {},
+    defeated: false,
     initiative: 0,
     acted: false,
     moved: false,
@@ -115,11 +132,19 @@ function initBattle() {
   state.selectedAction = "move";
   state.selectedAbilityId = null;
   state.abilityMenuOpen = false;
+  state.pendingTransfer = null;
   state.inspectedTile = null;
   state.inspectedUnitId = null;
   state.reachable.clear();
   state.attackable.clear();
   state.abilityTargets.clear();
+  state.visualEvents = [];
+  state.fingers = spawnSukunaFingers();
+  state.yujiFingerState = Object.fromEntries(
+    state.units
+      .filter((unit) => unit.characterId === "yuji")
+      .map((unit) => [unit.id, { consumed: 0, contributions: {}, deadTurnsReady: 0, transformed: false }]),
+  );
   state.round = 1;
   state.turnCount = 0;
   state.gameOver = false;
@@ -281,6 +306,10 @@ function livingUnits() {
   return state.units.filter((unit) => unit.hp > 0);
 }
 
+function turnEligibleUnits() {
+  return state.units.filter((unit) => unit.hp > 0 || canDeadYujiTransform(unit));
+}
+
 function currentUnit() {
   return state.units.find((unit) => unit.id === state.currentUnitId);
 }
@@ -298,7 +327,82 @@ function key(x, y, z) {
 }
 
 function unitAt(x, y, z) {
+  return state.units.find((unit) => unit.x === x && unit.y === y && unit.z === z);
+}
+
+function livingUnitAt(x, y, z) {
   return livingUnits().find((unit) => unit.x === x && unit.y === y && unit.z === z);
+}
+
+function fingerPileAt(x, y, z) {
+  return state.fingers.find((pile) => pile.x === x && pile.y === y && pile.z === z);
+}
+
+function addFingerPile(x, y, z, count) {
+  if (count <= 0) return;
+  const existing = fingerPileAt(x, y, z);
+  if (existing) {
+    existing.count += count;
+    return;
+  }
+  state.fingers.push({ id: `finger-${Date.now()}-${state.fingers.length}`, x, y, z, count });
+}
+
+function removeFingerPile(pile) {
+  state.fingers = state.fingers.filter((entry) => entry.id !== pile.id);
+}
+
+function spawnSukunaFingers() {
+  if (!state.units.some((unit) => unit.characterId === "yuji")) return [];
+
+  const blocked = new Set(state.units.map((unit) => key(unit.x, unit.y, unit.z)));
+  const piles = [];
+  let attempts = 0;
+  while (piles.length < SUKUNA_FINGER_COUNT && attempts < 1000) {
+    attempts += 1;
+    const x = Math.floor(Math.random() * SIZE);
+    const y = Math.floor(Math.random() * SIZE);
+    const z = Math.floor(Math.random() * LEVELS);
+    const tileKey = key(x, y, z);
+    if (blocked.has(tileKey) || piles.some((pile) => key(pile.x, pile.y, pile.z) === tileKey)) continue;
+    piles.push({ id: `finger-start-${piles.length}`, x, y, z, count: 1 });
+  }
+  return piles;
+}
+
+function yujiFingerState(yuji) {
+  return yuji ? state.yujiFingerState[yuji.id] : null;
+}
+
+function consumeFingersForYuji(yuji, count, giver = null) {
+  const fingerState = yujiFingerState(yuji);
+  if (!fingerState || count <= 0) return;
+  fingerState.consumed += count;
+  if (giver) {
+    fingerState.contributions[giver.id] = (fingerState.contributions[giver.id] ?? 0) + count;
+  }
+  addLog(`${yuji.name} consume ${count} dedo${count === 1 ? "" : "s"} de Sukuna (${fingerState.consumed}).`);
+}
+
+function pickupFingersAtUnit(unit) {
+  if (unit.hp <= 0) return;
+  const pile = fingerPileAt(unit.x, unit.y, unit.z);
+  if (!pile) return;
+  const count = pile.count;
+  removeFingerPile(pile);
+  if (unit.characterId === "yuji") {
+    consumeFingersForYuji(unit, count);
+    return;
+  }
+  unit.sukunaFingers += count;
+  addLog(`${unit.name} recoge ${count} dedo${count === 1 ? "" : "s"} de Sukuna.`);
+}
+
+function dropFingersFromUnit(unit) {
+  if (unit.sukunaFingers <= 0) return;
+  addFingerPile(unit.x, unit.y, unit.z, unit.sukunaFingers);
+  addLog(`${unit.name} deja caer ${unit.sukunaFingers} dedo${unit.sukunaFingers === 1 ? "" : "s"} de Sukuna.`);
+  unit.sukunaFingers = 0;
 }
 
 function stairAt(x, y, z) {
@@ -316,6 +420,44 @@ function getAbilities(unit) {
 
 function getPassive(unit) {
   return unit.passiveId ? data.passives?.[unit.passiveId] : null;
+}
+
+function isYuji(unit) {
+  return unit?.characterId === "yuji";
+}
+
+function canDeadYujiTransform(unit) {
+  if (!isYuji(unit) || unit.hp > 0) return false;
+  const fingerState = yujiFingerState(unit);
+  return Boolean(fingerState && fingerState.consumed >= SUKUNA_TRANSFORM_FINGERS && !fingerState.transformed);
+}
+
+function contributionCountForYuji(unit, yuji) {
+  return yujiFingerState(yuji)?.contributions[unit.id] ?? 0;
+}
+
+function totalFingerContributions(unit) {
+  return Object.values(state.yujiFingerState).reduce((total, fingerState) => total + (fingerState.contributions[unit.id] ?? 0), 0);
+}
+
+function adjacentYujiForTransfer(unit) {
+  if (!unit || unit.sukunaFingers <= 0) return null;
+  return state.units.find((candidate) => {
+    if (!isYuji(candidate)) return false;
+    if (!isAdjacent8(unit, candidate)) return false;
+    if (candidate.hp > 0) return candidate.team === unit.team;
+    return true;
+  });
+}
+
+function canTransferFingers(unit) {
+  return Boolean(adjacentYujiForTransfer(unit));
+}
+
+function focusChance(unit) {
+  const passive = getPassive(unit);
+  if (passive?.id !== "focus") return 0;
+  return passive.blackFlashBaseChance + passive.blackFlashChancePerFocus * unit.focus;
 }
 
 function distance2d(a, x, y) {
@@ -350,6 +492,15 @@ function abilityDescription(ability) {
   return `Apoyo/utilidad, ${ability.ceCost} CE`;
 }
 
+function queueVisualEvent(type, payload = {}) {
+  state.visualEvents.push({
+    id: `${Date.now()}-${state.visualEvents.length}`,
+    type,
+    ...payload,
+  });
+  state.visualEvents = state.visualEvents.slice(-20);
+}
+
 function addLog(text) {
   state.log.unshift(text);
   state.log = state.log.slice(0, 12);
@@ -377,11 +528,11 @@ function tickInitiative(now) {
   const elapsed = Math.min(0.08, (now - lastInitiativeAt) / 1000);
   lastInitiativeAt = now;
 
-  for (const unit of livingUnits()) {
+  for (const unit of turnEligibleUnits()) {
     unit.initiative = Math.min(MAX_TURN, unit.initiative + unit.speed * elapsed * INITIATIVE_SCALE);
   }
 
-  const ready = livingUnits().filter((unit) => unit.initiative >= MAX_TURN);
+  const ready = turnEligibleUnits().filter((unit) => unit.initiative >= MAX_TURN);
   if (ready.length) {
     stopInitiativeClock();
     selectNextTurn(ready);
@@ -395,26 +546,54 @@ function tickInitiative(now) {
 function selectNextTurn(ready) {
   ready.sort((a, b) => b.initiative - a.initiative || b.speed - a.speed);
   const next = ready[0];
+  if (handleDeadYujiTurn(next)) return;
   expireTurnEffects(next);
   next.initiative = 0;
   next.acted = false;
   next.moved = false;
+  next.attackedThisTurn = false;
   state.currentUnitId = next.id;
   state.previewLevel = next.z;
   state.selectedAction = "move";
   state.selectedAbilityId = null;
   state.abilityMenuOpen = false;
+  state.pendingTransfer = null;
   state.inspectedTile = null;
   state.turnCount += 1;
-  state.round = Math.floor((state.turnCount - 1) / livingUnits().length) + 1;
+  state.round = Math.floor((state.turnCount - 1) / Math.max(1, turnEligibleUnits().length)) + 1;
   calculateRanges();
   addLog(`Turno de ${next.name} (${next.team === "blue" ? "Azul" : "Rojo"}).`);
   render();
 }
 
+function handleDeadYujiTurn(unit) {
+  if (!canDeadYujiTransform(unit)) return false;
+  const fingerState = yujiFingerState(unit);
+  unit.initiative = 0;
+  fingerState.deadTurnsReady += 1;
+
+  if (fingerState.deadTurnsReady < 2) {
+    addLog(`${unit.name} yace en el suelo. Sukuna aun no despierta.`);
+    state.currentUnitId = null;
+    render();
+    startInitiativeClock();
+    return true;
+  }
+
+  transformYujiIntoSukuna(unit);
+  checkVictory();
+  render();
+  if (!state.gameOver) startInitiativeClock();
+  return true;
+}
+
 function advanceToNextTurn() {
   const endingUnit = currentUnit();
-  if (endingUnit) processEndOfTurnReactions(endingUnit);
+  if (endingUnit) {
+    pickupFingersAtUnit(endingUnit);
+    processFocusEndOfTurn(endingUnit);
+    processEndOfTurnReactions(endingUnit);
+  }
 
   if (checkVictory()) {
     render();
@@ -425,6 +604,7 @@ function advanceToNextTurn() {
   state.selectedAction = "move";
   state.selectedAbilityId = null;
   state.abilityMenuOpen = false;
+  state.pendingTransfer = null;
   state.inspectedTile = null;
   state.reachable.clear();
   state.attackable.clear();
@@ -438,7 +618,7 @@ function calculateRanges() {
   state.reachable.clear();
   state.attackable.clear();
   state.abilityTargets.clear();
-  if (!unit || state.gameOver) return;
+  if (!unit || unit.hp <= 0 || state.gameOver) return;
 
   if (!unit.moved) {
     for (let y = 0; y < SIZE; y += 1) {
@@ -469,7 +649,7 @@ function calculateRanges() {
   for (let y = 0; y < SIZE; y += 1) {
     for (let x = 0; x < SIZE; x += 1) {
       if (distance2d(unit, x, y) > ability.range) continue;
-      const occupant = unitAt(x, y, unit.z);
+      const occupant = livingUnitAt(x, y, unit.z);
       if (ability.type === "attack" && occupant?.team !== unit.team) {
         state.abilityTargets.add(key(x, y, unit.z));
       }
@@ -487,6 +667,12 @@ function render() {
   renderPanel();
   renderTileInfo();
   renderLog();
+}
+
+function clearTransferPanel() {
+  state.pendingTransfer = null;
+  transferPanelEl.classList.add("hidden");
+  transferAmountInput.value = "";
 }
 
 function renderTeamList() {
@@ -522,7 +708,9 @@ function renderTeamList() {
       portrait.draggable = false;
 
       const copy = document.createElement("span");
-      copy.innerHTML = `<strong>${unit.name}</strong><small>${unit.hp}/${unit.maxHp} vida - ${unit.ce}/${unit.maxCe} CE</small>`;
+      const yujiConsumed = isYuji(unit) ? ` - ${yujiFingerState(unit)?.consumed ?? 0} consumidos` : "";
+      const given = totalFingerContributions(unit) ? ` - ${totalFingerContributions(unit)} dados` : "";
+      copy.innerHTML = `<strong>${unit.name}</strong><small>${unit.hp}/${unit.maxHp} vida - ${unit.ce}/${unit.maxCe} CE - ${unit.sukunaFingers} dedos${yujiConsumed}${given}</small>`;
 
       button.append(portrait, copy);
       section.append(button);
@@ -574,12 +762,14 @@ function renderTile(x, y, z) {
   const tile = document.createElement("button");
   const tileKey = key(x, y, z);
   const occupant = unitAt(x, y, z);
+  const fingerPile = fingerPileAt(x, y, z);
   const ability = selectedAbility();
   tile.type = "button";
   tile.className = "tile";
   tile.setAttribute("aria-label", `Casilla ${x + 1}, ${y + 1}, nivel ${z + 1}`);
 
   if (stairAt(x, y, z)) tile.classList.add("stairs");
+  if (fingerPile) tile.classList.add("finger-tile");
   if (state.reachable.has(tileKey)) tile.classList.add("move");
   if (state.abilityTargets.has(tileKey)) tile.classList.add(ability?.type === "attack" ? "skill-attack" : "skill-support");
   if (occupant && state.attackable.has(occupant.id)) tile.classList.add("attack");
@@ -589,10 +779,20 @@ function renderTile(x, y, z) {
     const otherFloorUnit = occupant.z !== state.previewLevel;
     const currentTurnUnit = unit && occupant.id === unit.id;
     tile.append(renderUnit(occupant, `${otherFloorUnit ? "other-floor-unit" : ""} ${currentTurnUnit ? "current-turn-unit" : ""}`));
-    const hp = document.createElement("span");
-    hp.className = `hp ${otherFloorUnit ? "other-floor-unit" : ""}`;
-    hp.innerHTML = `<span style="width:${(occupant.hp / occupant.maxHp) * 100}%"></span>`;
-    tile.append(hp);
+    if (occupant.hp > 0) {
+      const hp = document.createElement("span");
+      hp.className = `hp ${otherFloorUnit ? "other-floor-unit" : ""}`;
+      hp.innerHTML = `<span style="width:${(occupant.hp / occupant.maxHp) * 100}%"></span>`;
+      tile.append(hp);
+    }
+  }
+
+  if (fingerPile) {
+    const finger = document.createElement("span");
+    finger.className = "finger-token";
+    finger.textContent = fingerPile.count > 1 ? String(fingerPile.count) : "";
+    finger.title = `${fingerPile.count} dedo${fingerPile.count === 1 ? "" : "s"} de Sukuna`;
+    tile.append(finger);
   }
 
   tile.addEventListener("click", () => handleTileClick(x, y, z));
@@ -602,7 +802,7 @@ function renderTile(x, y, z) {
 function renderUnit(unit, extraClass = "") {
   const model = unit.directionModels?.[unit.facing] ?? unit.model;
   const el = document.createElement("span");
-  el.className = `unit ${model.shape ?? "image-model"} ${unit.team}-unit ${extraClass}`.trim();
+  el.className = `unit ${model.shape ?? "image-model"} ${unit.team}-unit ${unit.hp <= 0 ? "dead-unit" : ""} ${extraClass}`.trim();
   if (model.image) {
     const image = document.createElement("img");
     image.src = model.image;
@@ -640,7 +840,7 @@ function portraitUrl(unit) {
 function renderInitiative() {
   initiativeTrackEl.innerHTML = '<span class="finish-marker" aria-hidden="true"></span>';
 
-  for (const unit of livingUnits()) {
+  for (const unit of turnEligibleUnits()) {
     const token = document.createElement("div");
     token.className = `initiative-token ${unit.id === state.currentUnitId ? "current" : ""}`;
     const percent = Math.max(6, Math.min(94, unit.initiative));
@@ -688,6 +888,10 @@ function renderPanel() {
       <div class="stat"><strong>Defensa</strong>${defenseLabel(displayUnit)}</div>
       <div class="stat"><strong>Movilidad</strong>${displayUnit.mobility}</div>
       <div class="stat"><strong>Velocidad</strong>${displayUnit.speed}/100</div>
+      ${displayUnit.focus !== null ? `<div class="stat"><strong>Focus</strong>${displayUnit.focus}/5</div>` : ""}
+      <div class="stat"><strong>Dedos</strong>${displayUnit.sukunaFingers}</div>
+      <div class="stat"><strong>Entregados</strong>${totalFingerContributions(displayUnit)}</div>
+      ${isYuji(displayUnit) ? `<div class="stat"><strong>Consumidos</strong>${yujiFingerState(displayUnit)?.consumed ?? 0}</div>` : ""}
     </div>
     ${displayUnit.id !== unit?.id && unit ? `<div class="ability-line">Turno actual: ${unit.name}</div>` : ""}
     ${getPassive(displayUnit) ? `<div class="ability-line">Pasiva: ${getPassive(displayUnit).name}</div>` : ""}
@@ -698,24 +902,43 @@ function renderPanel() {
   if (!unit) {
     attackBtn.disabled = true;
     skillBtn.disabled = true;
+    specialBtn.disabled = true;
     stairsUpBtn.disabled = true;
     stairsDownBtn.disabled = true;
     endBtn.disabled = state.gameOver;
+    clearTransferPanel();
     abilityMenuEl.classList.add("hidden");
     abilityMenuEl.innerHTML = "";
     return;
   }
 
   const onStair = stairAt(unit.x, unit.y, unit.z);
-  attackBtn.disabled = state.gameOver || unit.acted || !state.attackable.size;
+  const unitDefeated = unit.hp <= 0;
+  attackBtn.disabled = state.gameOver || unitDefeated || unit.acted || !state.attackable.size;
   attackBtn.classList.toggle("active", state.selectedAction === "attack");
   const turnAbilities = getAbilities(unit);
-  skillBtn.disabled = state.gameOver || unit.acted || !turnAbilities.length;
+  skillBtn.disabled = state.gameOver || unitDefeated || unit.acted || !turnAbilities.length;
   skillBtn.classList.toggle("active", state.abilityMenuOpen);
-  stairsUpBtn.disabled = state.gameOver || !onStair || !onStair.levels.includes(unit.z + 1) || Boolean(unitAt(unit.x, unit.y, unit.z + 1));
-  stairsDownBtn.disabled = state.gameOver || !onStair || !onStair.levels.includes(unit.z - 1) || Boolean(unitAt(unit.x, unit.y, unit.z - 1));
+  specialBtn.textContent = canTransferFingers(unit) ? "Dar dedos" : "Especial";
+  specialBtn.disabled = state.gameOver || unitDefeated || !canTransferFingers(unit);
+  stairsUpBtn.disabled = state.gameOver || unitDefeated || !onStair || !onStair.levels.includes(unit.z + 1) || Boolean(unitAt(unit.x, unit.y, unit.z + 1));
+  stairsDownBtn.disabled = state.gameOver || unitDefeated || !onStair || !onStair.levels.includes(unit.z - 1) || Boolean(unitAt(unit.x, unit.y, unit.z - 1));
   endBtn.disabled = state.gameOver;
   renderAbilityMenu(unit, turnAbilities);
+  renderTransferPanel(unit);
+}
+
+function renderTransferPanel(unit) {
+  if (!state.pendingTransfer || state.pendingTransfer.unitId !== unit.id || !canTransferFingers(unit)) {
+    transferPanelEl.classList.add("hidden");
+    return;
+  }
+
+  const yuji = adjacentYujiForTransfer(unit);
+  transferPanelEl.classList.remove("hidden");
+  transferPanelEl.querySelector("label").textContent = `${unit.name} entrega dedos a ${yuji.name}`;
+  transferAmountInput.max = String(unit.sukunaFingers);
+  if (!transferAmountInput.value) transferAmountInput.value = String(unit.sukunaFingers);
 }
 
 function renderAbilityMenu(unit, abilities) {
@@ -734,10 +957,11 @@ function renderAbilityMenu(unit, abilities) {
         useSelfAbility(ability);
         return;
       }
-      state.selectedAction = "skill";
-      state.selectedAbilityId = ability.id;
-      calculateRanges();
-      render();
+    state.selectedAction = "skill";
+    state.selectedAbilityId = ability.id;
+    state.pendingTransfer = null;
+    calculateRanges();
+    render();
     });
     abilityMenuEl.append(button);
   }
@@ -760,6 +984,7 @@ function renderTileInfo() {
   const { x, y, z } = state.inspectedTile;
   const occupant = unitAt(x, y, z);
   const stair = stairAt(x, y, z);
+  const fingerPile = fingerPileAt(x, y, z);
   const tileKind = stair ? "Escalera" : "Suelo";
   const tileState = [
     state.reachable.has(key(x, y, z)) ? "Movimiento posible" : "",
@@ -771,7 +996,9 @@ function renderTileInfo() {
   tileInfoEl.append(title);
 
   const meta = document.createElement("p");
-  meta.textContent = tileState.length ? tileState.join(" - ") : "Sin marcador activo";
+  const tileDetails = [...tileState];
+  if (fingerPile) tileDetails.push(`${fingerPile.count} dedo${fingerPile.count === 1 ? "" : "s"} de Sukuna`);
+  meta.textContent = tileDetails.length ? tileDetails.join(" - ") : "Sin marcador activo";
   tileInfoEl.append(meta);
 
   if (!occupant) {
@@ -792,6 +1019,10 @@ function renderTileInfo() {
     <div><strong>Defensa</strong>${defenseLabel(occupant)}</div>
     <div><strong>Movilidad</strong>${occupant.mobility}</div>
     <div><strong>Velocidad</strong>${occupant.speed}</div>
+    ${occupant.focus !== null ? `<div><strong>Focus</strong>${occupant.focus}/5</div>` : ""}
+    <div><strong>Dedos</strong>${occupant.sukunaFingers}</div>
+    <div><strong>Entregados</strong>${totalFingerContributions(occupant)}</div>
+    ${isYuji(occupant) ? `<div><strong>Consumidos</strong>${yujiFingerState(occupant)?.consumed ?? 0}</div>` : ""}
   `;
   tileInfoEl.append(stats);
 
@@ -804,7 +1035,7 @@ function renderTileInfo() {
 
 function handleTileClick(x, y, z) {
   const unit = currentUnit();
-  if (!unit || state.gameOver) return;
+  if (!unit || unit.hp <= 0 || state.gameOver) return;
 
   state.inspectedTile = { x, y, z };
   const occupant = unitAt(x, y, z);
@@ -834,14 +1065,17 @@ function handleTileClick(x, y, z) {
   }
 
   if (!unit.moved && z === unit.z && state.reachable.has(tileKey) && (!occupant || occupant.id === unit.id)) {
+    const from = { x: unit.x, y: unit.y, z: unit.z };
     unit.x = x;
     unit.y = y;
     unit.moved = true;
+    queueVisualEvent("move", { unitId: unit.id, from, to: { x, y, z } });
     addLog(`${unit.name} se mueve a ${x + 1},${y + 1} en nivel ${z + 1}.`);
     calculateRanges();
     state.selectedAction = state.attackable.size ? "attack" : "move";
     state.selectedAbilityId = null;
     state.abilityMenuOpen = false;
+    state.pendingTransfer = null;
     render();
     return;
   }
@@ -882,20 +1116,85 @@ function recoverDedicationCe(unit) {
   addLog(`${unit.name} activa Dedicacion y recupera ${unit.ce - before} CE.`);
 }
 
+function gainFocusAfterAttack(unit) {
+  const passive = getPassive(unit);
+  if (passive?.id !== "focus") return;
+  const before = unit.focus;
+  unit.focus = Math.min(passive.maxFocus, unit.focus + 1);
+  unit.attackedThisTurn = true;
+  if (unit.focus !== before) addLog(`${unit.name} gana 1 Focus (${unit.focus}/${passive.maxFocus}).`);
+}
+
+function processFocusEndOfTurn(unit) {
+  const passive = getPassive(unit);
+  if (passive?.id !== "focus" || unit.attackedThisTurn || unit.focus <= 0) return;
+  const before = unit.focus;
+  unit.focus = Math.max(0, unit.focus - 2);
+  addLog(`${unit.name} pierde ${before - unit.focus} Focus por no atacar.`);
+}
+
+function transformYujiIntoSukuna(yuji) {
+  const fingerState = yujiFingerState(yuji);
+  if (!fingerState || fingerState.transformed) return;
+  fingerState.transformed = true;
+  yuji.defeated = false;
+  yuji.hp = Math.max(1, Math.ceil(yuji.maxHp * 0.4));
+  yuji.activeEffects.sukuna = true;
+  addLog(`${yuji.name} se transforma en Sukuna.`);
+
+  const targets = livingUnits().filter((unit) => unit.id !== yuji.id && unit.z === yuji.z);
+  for (const target of targets) {
+    const contribution = contributionCountForYuji(target, yuji);
+    const reduction = Math.min(1, contribution * SUKUNA_FINGER_DAMAGE_REDUCTION);
+    const rawDamage = Math.max(1, Math.floor(yuji.attack * SUKUNA_TRANSFORM_ATTACK_MULTIPLIER - effectiveDefense(target)));
+    const damage = Math.max(0, Math.floor(rawDamage * (1 - reduction)));
+    const wasAlive = target.hp > 0;
+    target.hp = Math.max(0, target.hp - damage);
+    queueVisualEvent("hit", {
+      attackerId: yuji.id,
+      targetId: target.id,
+      label: "Transformacion de Sukuna",
+      damage,
+      sukunaTransformation: true,
+    });
+    addLog(`Sukuna golpea a ${target.name}: ${damage} dano${contribution ? ` (${contribution} dedos entregados)` : ""}.`);
+    if (wasAlive && target.hp === 0) handleUnitDefeated(target);
+  }
+}
+
 function performAttack(attacker, target, label, options = {}) {
   const attackMultiplier = options.attackMultiplier ?? 1;
   const triggersCounterattack = options.triggersCounterattack ?? true;
-  const damage = Math.max(1, Math.floor(attacker.attack * attackMultiplier - effectiveDefense(target)));
+  const canBlackFlash = options.canBlackFlash ?? false;
+  const blackFlash = canBlackFlash && getPassive(attacker)?.id === "focus" && Math.random() < focusChance(attacker);
+  const damageMultiplier = blackFlash ? getPassive(attacker).blackFlashDamageMultiplier : 1;
+  const damage = Math.max(1, Math.floor((attacker.attack * attackMultiplier - effectiveDefense(target)) * damageMultiplier));
 
+  const wasAlive = target.hp > 0;
   target.hp = Math.max(0, target.hp - damage);
-  addLog(`${attacker.name} usa ${label} contra ${target.name}: ${damage} dano.`);
-  if (target.hp === 0) {
-    addLog(`${target.name} queda fuera.`);
+  queueVisualEvent("hit", {
+    attackerId: attacker.id,
+    targetId: target.id,
+    label,
+    damage,
+    blackFlash,
+  });
+  addLog(`${attacker.name} usa ${blackFlash ? "Black Flash" : label} contra ${target.name}: ${damage} dano.`);
+  if (wasAlive && target.hp === 0) {
+    handleUnitDefeated(target);
     return damage;
   }
 
   if (triggersCounterattack) tryCounterattack(target, attacker);
   return damage;
+}
+
+function handleUnitDefeated(unit) {
+  if (unit.defeated) return;
+  unit.defeated = true;
+  unit.activeEffects = {};
+  dropFingersFromUnit(unit);
+  addLog(`${unit.name} queda fuera.`);
 }
 
 function tryCounterattack(defender, attacker) {
@@ -906,10 +1205,11 @@ function tryCounterattack(defender, attacker) {
 
 function useOffense(target) {
   const unit = currentUnit();
-  if (!unit || unit.acted || !state.attackable.has(target.id)) return;
+  if (!unit || unit.hp <= 0 || unit.acted || !state.attackable.has(target.id)) return;
 
   let label = "ataque normal";
   let attackMultiplier = 1;
+  let canBlackFlash = true;
 
   if (state.selectedAction === "skill") {
     const ability = getAbility(unit, state.selectedAbilityId);
@@ -917,13 +1217,16 @@ function useOffense(target) {
     unit.ce -= ability.ceCost;
     attackMultiplier = ability.attackMultiplier;
     label = ability.name;
+    canBlackFlash = false;
   }
 
-  performAttack(unit, target, label, { attackMultiplier });
+  performAttack(unit, target, label, { attackMultiplier, canBlackFlash });
+  gainFocusAfterAttack(unit);
   unit.acted = true;
   unit.moved = true;
   state.selectedAbilityId = null;
   state.abilityMenuOpen = false;
+  state.pendingTransfer = null;
 
   if (checkVictory()) {
     render();
@@ -936,7 +1239,7 @@ function useOffense(target) {
 
 function useSelfAbility(ability) {
   const unit = currentUnit();
-  if (!unit || !ability || unit.acted || unit.ce < ability.ceCost) return;
+  if (!unit || unit.hp <= 0 || !ability || unit.acted || unit.ce < ability.ceCost) return;
 
   unit.ce -= ability.ceCost;
   if (ability.effect === "simpleDomain") {
@@ -951,6 +1254,7 @@ function useSelfAbility(ability) {
   unit.moved = true;
   state.selectedAbilityId = null;
   state.abilityMenuOpen = false;
+  state.pendingTransfer = null;
   addLog(`${unit.name} usa ${ability.name}.`);
   recoverDedicationCe(unit);
   calculateRanges();
@@ -960,21 +1264,58 @@ function useSelfAbility(ability) {
 function useSupportAbility(x, y, z) {
   const unit = currentUnit();
   const ability = selectedAbility();
-  if (!unit || !ability || unit.acted || unit.ce < ability.ceCost) return;
+  if (!unit || unit.hp <= 0 || !ability || unit.acted || unit.ce < ability.ceCost) return;
 
   unit.ce -= ability.ceCost;
   unit.acted = true;
   unit.moved = true;
   state.selectedAbilityId = null;
   state.abilityMenuOpen = false;
+  state.pendingTransfer = null;
   addLog(`${unit.name} usa ${ability.name} en ${x + 1},${y + 1}, nivel ${z + 1}.`);
   calculateRanges();
   render();
 }
 
+function transferFingersToYuji(unit, yuji, count) {
+  const amount = Math.max(0, Math.min(unit.sukunaFingers, Math.floor(count)));
+  if (!amount) return;
+  unit.sukunaFingers -= amount;
+  consumeFingersForYuji(yuji, amount, unit);
+  addLog(`${unit.name} entrega ${amount} dedo${amount === 1 ? "" : "s"} a ${yuji.name}.`);
+  render();
+}
+
+function useSpecialAction() {
+  const unit = currentUnit();
+  const yuji = adjacentYujiForTransfer(unit);
+  if (!unit || !yuji) return;
+  state.pendingTransfer = { unitId: unit.id, yujiId: yuji.id };
+  state.abilityMenuOpen = false;
+  render();
+  transferAmountInput.focus();
+  transferAmountInput.select();
+}
+
+function confirmTransfer() {
+  const unit = currentUnit();
+  if (!unit || state.pendingTransfer?.unitId !== unit.id) return;
+  const yuji = adjacentYujiForTransfer(unit);
+  if (!yuji || yuji.id !== state.pendingTransfer.yujiId) {
+    clearTransferPanel();
+    render();
+    return;
+  }
+  const amount = Number.parseInt(transferAmountInput.value, 10);
+  if (Number.isNaN(amount)) return;
+  transferFingersToYuji(unit, yuji, amount);
+  clearTransferPanel();
+  render();
+}
+
 function changeLevel(direction) {
   const unit = currentUnit();
-  if (!unit || state.gameOver) return;
+  if (!unit || unit.hp <= 0 || state.gameOver) return;
   const stair = stairAt(unit.x, unit.y, unit.z);
   const nextZ = unit.z + direction;
   if (!stair || !stair.levels.includes(nextZ) || unitAt(unit.x, unit.y, nextZ)) return;
@@ -984,13 +1325,18 @@ function changeLevel(direction) {
   state.previewLevel = nextZ;
   state.selectedAbilityId = null;
   state.abilityMenuOpen = false;
+  state.pendingTransfer = null;
   addLog(`${unit.name} cambia al nivel ${nextZ + 1}.`);
   calculateRanges();
   render();
 }
 
 function checkVictory() {
-  const teams = new Set(livingUnits().map((unit) => unit.team));
+  const teams = new Set(
+    state.units
+      .filter((unit) => unit.hp > 0 || canDeadYujiTransform(unit))
+      .map((unit) => unit.team),
+  );
   if (teams.size === 1) {
     const winner = [...teams][0];
     stopInitiativeClock();
@@ -1006,12 +1352,14 @@ attackBtn.addEventListener("click", () => {
   state.selectedAction = state.selectedAction === "attack" ? "move" : "attack";
   state.selectedAbilityId = null;
   state.abilityMenuOpen = false;
+  state.pendingTransfer = null;
   calculateRanges();
   render();
 });
 
 skillBtn.addEventListener("click", () => {
   state.abilityMenuOpen = !state.abilityMenuOpen;
+  state.pendingTransfer = null;
   if (!state.abilityMenuOpen && state.selectedAction === "skill") {
     state.selectedAction = "move";
     state.selectedAbilityId = null;
@@ -1022,6 +1370,12 @@ skillBtn.addEventListener("click", () => {
 
 stairsUpBtn.addEventListener("click", () => changeLevel(1));
 stairsDownBtn.addEventListener("click", () => changeLevel(-1));
+specialBtn.addEventListener("click", useSpecialAction);
+confirmTransferBtn.addEventListener("click", confirmTransfer);
+cancelTransferBtn.addEventListener("click", () => {
+  clearTransferPanel();
+  render();
+});
 endBtn.addEventListener("click", advanceToNextTurn);
 restartBtn.addEventListener("click", initBattle);
 window.addEventListener("keydown", (event) => {

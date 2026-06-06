@@ -10,7 +10,7 @@ window.GameData.statTiers = {
 
 window.GameData.baseStatsForCost = function baseStatsForCost(cost) {
   return {
-    maxHp: 20 + cost * 3,
+    maxHp: 40 + cost * 3,
     speed: 10 + cost * 2,
     attack: 10 + cost * 2,
     defense: 4 + cost,
@@ -19,7 +19,7 @@ window.GameData.baseStatsForCost = function baseStatsForCost(cost) {
   };
 };
 
-window.GameData.statsFromProfile = function statsFromProfile(cost, profile = {}) {
+window.GameData.statsFromProfile = function statsFromProfile(cost, profile = {}, overrides = {}) {
   const base = window.GameData.baseStatsForCost(cost);
   const tierValue = (stat) => window.GameData.statTiers[profile[stat] ?? "normal"] ?? 0;
 
@@ -30,5 +30,6 @@ window.GameData.statsFromProfile = function statsFromProfile(cost, profile = {})
     defense: base.defense + tierValue("defense"),
     mobility: base.mobility,
     maxCe: base.maxCe,
+    ...overrides,
   };
 };
