@@ -91,7 +91,23 @@ test("can select both teams, choose the map, and start a battle", async () => {
   chosoButton.click();
   assert.equal(document.querySelector("#unitCard h2").textContent, "Choso");
   assert.match(document.querySelector("#unitCard").textContent, /habilidades/);
+  assert.doesNotMatch(document.querySelector("#unitCard").textContent, /Velocidad\d+\/100/);
   assert.match(document.querySelector("#log").textContent, /Empieza la batalla/);
+
+  dom.window.close();
+});
+
+test("current unit stays at the end of the initiative bar", async () => {
+  const dom = await loadGame();
+  const { document } = dom.window;
+  startMiwaMirrorBattle(document);
+
+  dom.window.eval(`
+    stopInitiativeClock();
+    selectNextTurn([livingUnits().find((unit) => unit.team === "blue")]);
+  `);
+
+  assert.equal(document.querySelector(".initiative-token.current").style.left, "94%");
 
   dom.window.close();
 });
@@ -106,8 +122,12 @@ test("Sukuna Fingers only spawn when Yuji is selected, and only seven spawn with
   clickRosterCard(noYujiDocument, "Choso");
   clickButton(noYujiDocument, "Elegir mapa");
   clickButton(noYujiDocument, "Empezar batalla");
+  noYujiDom.window.eval('stopInitiativeClock(); selectNextTurn([livingUnits().find((unit) => unit.team === "blue")]);');
 
   assert.equal(noYujiDocument.querySelectorAll(".finger-token").length, 0);
+  assert.doesNotMatch(noYujiDocument.querySelector("#teamList").textContent, /dedos|consumidos|dados/i);
+  assert.doesNotMatch(noYujiDocument.querySelector("#unitCard").textContent, /Dedos|Entregados|Consumidos/);
+  assert.equal(noYujiDocument.querySelector("#specialBtn").classList.contains("hidden"), true);
   noYujiDom.window.close();
 
   const twoYujiDom = await loadGame();
@@ -184,10 +204,42 @@ test("Miwa counterattacks and recovers CE with Dedicacion", async () => {
     performAttack(red, blue, "ataque normal");
   `);
 
-  assert.equal(afterAbilityCe, 55);
-  assert.equal(dom.window.eval("currentUnit().hp"), miwaHpBefore - 14);
-  assert.equal(dom.window.eval('livingUnits().find((unit) => unit.team === "red").hp'), redHpBefore - 7);
-  assert.equal(dom.window.eval("currentUnit().ce"), 60);
+  assert.equal(afterAbilityCe, 25);
+  assert.equal(dom.window.eval("currentUnit().hp"), miwaHpBefore - 15);
+  assert.equal(dom.window.eval('livingUnits().find((unit) => unit.team === "red").hp'), redHpBefore - 5);
+  assert.equal(dom.window.eval("currentUnit().ce"), 30);
+
+  dom.window.close();
+});
+
+test("Miwa has 50 CE, 30 CE skills, one-turn cooldowns, and regenerates CE on turn start", async () => {
+  const dom = await loadGame();
+  const { document } = dom.window;
+  dom.window.Math.random = () => 0;
+  startMiwaMirrorBattle(document);
+
+  dom.window.eval(`
+    stopInitiativeClock();
+    const miwa = livingUnits().find((unit) => unit.team === "blue");
+    selectNextTurn([miwa]);
+    miwa.ce = 40;
+    selectNextTurn([miwa]);
+  `);
+
+  assert.equal(dom.window.eval("currentUnit().maxCe"), 50);
+  assert.equal(dom.window.eval("currentUnit().ce"), 44);
+  assert.match(dom.window.eval('abilityDescription(getAbility(currentUnit(), "counterattack"))'), /30 CE, CD 1/);
+
+  dom.window.eval('useSelfAbility(getAbility(currentUnit(), "counterattack"))');
+
+  assert.equal(dom.window.eval("currentUnit().ce"), 19);
+  assert.equal(dom.window.eval('abilityCooldown(currentUnit(), "counterattack")'), 2);
+
+  dom.window.eval("selectNextTurn([currentUnit()])");
+  assert.equal(dom.window.eval('abilityCooldown(currentUnit(), "counterattack")'), 1);
+
+  dom.window.eval("selectNextTurn([currentUnit()])");
+  assert.equal(dom.window.eval('abilityCooldown(currentUnit(), "counterattack")'), 0);
 
   dom.window.close();
 });
@@ -215,7 +267,7 @@ test("Miwa simple domain hits an enemy ending turn in the surrounding zone", asy
     stopInitiativeClock();
   `);
 
-  assert.equal(dom.window.eval('livingUnits().find((unit) => unit.team === "red").hp'), redHpBefore - 7);
+  assert.equal(dom.window.eval('livingUnits().find((unit) => unit.team === "red").hp'), redHpBefore - 5);
 
   dom.window.close();
 });
@@ -244,7 +296,7 @@ test("Yuji has tuned stats, gains Focus, can Black Flash, and loses Focus withou
       focus: yuji.focus,
     };
   })())`)), {
-    maxHp: 46,
+    maxHp: 55,
     attack: 20,
     defense: 7,
     speed: 18,
@@ -269,7 +321,7 @@ test("Yuji has tuned stats, gains Focus, can Black Flash, and loses Focus withou
   `);
 
   assert.equal(dom.window.eval("currentUnit().focus"), 1);
-  assert.equal(dom.window.eval('livingUnits().find((unit) => unit.team === "red").hp'), 23);
+  assert.equal(dom.window.eval('livingUnits().find((unit) => unit.team === "red").hp'), 32);
   assert.match(document.querySelector("#log").textContent, /Black Flash/);
 
   dom.window.eval(`
@@ -280,6 +332,36 @@ test("Yuji has tuned stats, gains Focus, can Black Flash, and loses Focus withou
     stopInitiativeClock();
   `);
   assert.equal(dom.window.eval('livingUnits().find((unit) => unit.characterId === "yuji").focus'), 3);
+
+  dom.window.close();
+});
+
+test("attack, defense, and speed scale linearly from CE", async () => {
+  const dom = await loadGame();
+  const { document } = dom.window;
+
+  clickButton(document, "Iniciar juego");
+  clickRosterCard(document, "Yuji");
+  clickButton(document, "Equipo rojo");
+  clickRosterCard(document, "Choso");
+  clickButton(document, "Elegir mapa");
+  clickButton(document, "Empezar batalla");
+  dom.window.eval('stopInitiativeClock(); selectNextTurn([livingUnits().find((unit) => unit.characterId === "yuji")]); currentUnit().ce = 0; render();');
+
+  assert.deepEqual(JSON.parse(dom.window.eval(`JSON.stringify((() => {
+    const yuji = currentUnit();
+    return {
+      attack: effectiveAttack(yuji),
+      defense: effectiveDefense(yuji),
+      speed: effectiveSpeed(yuji),
+    };
+  })())`)), {
+    attack: 15,
+    defense: 5,
+    speed: 13,
+  });
+  assert.match(document.querySelector("#unitCard").textContent, /Ataque15/);
+  assert.match(document.querySelector("#unitCard").textContent, /Velocidad13/);
 
   dom.window.close();
 });
@@ -356,7 +438,7 @@ test("dead Yuji transforms into Sukuna on the second eligible turn with finger m
     selectNextTurn([yuji]);
   `);
 
-  assert.equal(dom.window.eval('livingUnits().find((unit) => unit.characterId === "yuji").hp'), 19);
+  assert.equal(dom.window.eval('livingUnits().find((unit) => unit.characterId === "yuji").hp'), 22);
   assert.equal(dom.window.eval('livingUnits().find((unit) => unit.characterId === "choso").hp'), 71);
   assert.match(document.querySelector("#log").textContent, /Sukuna/);
 

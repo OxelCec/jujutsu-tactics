@@ -10,7 +10,7 @@ window.GameData.statTiers = {
 
 window.GameData.baseStatsForCost = function baseStatsForCost(cost) {
   return {
-    maxHp: 40 + cost * 3,
+    maxHp: 40 + cost * 6,
     speed: 10 + cost * 2,
     attack: 10 + cost * 2,
     defense: 4 + cost,

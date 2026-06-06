@@ -60,7 +60,7 @@ window.GameData.characters = [
     cost: 1,
     model: { shape: "circle" },
     statProfile: normalStats(),
-    stats: window.GameData.statsFromProfile(1, normalStats()),
+    stats: window.GameData.statsFromProfile(1, normalStats(), { maxCe: 50 }),
     abilityIds: ["simpleDomain", "counterattack"],
     passiveId: "dedication",
   },
