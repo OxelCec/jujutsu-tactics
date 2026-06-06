@@ -79,7 +79,88 @@ test("can select both teams, choose the map, and start a battle", async () => {
   assert.equal(document.querySelectorAll(".level-board").length, 3);
   assert.equal(document.querySelectorAll(".tile").length, 300);
   assert.equal(document.querySelectorAll(".unit").length, 4);
+  assert.match(document.querySelector("#teamList").textContent, /Equipo rojo/);
+  assert.match(document.querySelector("#teamList").textContent, /Equipo azul/);
+  assert.equal(document.querySelectorAll(".team-unit-button").length, 4);
+
+  const chosoButton = [...document.querySelectorAll(".team-unit-button")].find((button) =>
+    button.textContent.includes("Choso"),
+  );
+  assert.ok(chosoButton, "Expected Choso in the team list");
+  chosoButton.click();
+  assert.equal(document.querySelector("#unitCard h2").textContent, "Choso");
+  assert.match(document.querySelector("#unitCard").textContent, /habilidades/);
   assert.match(document.querySelector("#log").textContent, /Empieza la batalla/);
+
+  dom.window.close();
+});
+
+function startMiwaMirrorBattle(document) {
+  clickButton(document, "Iniciar juego");
+  clickRosterCard(document, "Miwa");
+  clickButton(document, "Equipo rojo");
+  clickRosterCard(document, "Miwa");
+  clickButton(document, "Elegir mapa");
+  clickButton(document, "Empezar batalla");
+}
+
+test("Miwa counterattacks and recovers CE with Dedicacion", async () => {
+  const dom = await loadGame();
+  const { document } = dom.window;
+  dom.window.Math.random = () => 0;
+  startMiwaMirrorBattle(document);
+
+  dom.window.eval("stopInitiativeClock()");
+  dom.window.eval('selectNextTurn([livingUnits().find((unit) => unit.team === "blue")])');
+  dom.window.eval("currentUnit().ce = 50");
+  dom.window.eval('useSelfAbility(getAbility(currentUnit(), "counterattack"))');
+
+  const afterAbilityCe = dom.window.eval("currentUnit().ce");
+  const miwaHpBefore = dom.window.eval("currentUnit().hp");
+  const redHpBefore = dom.window.eval('livingUnits().find((unit) => unit.team === "red").hp');
+
+  dom.window.eval(`
+    const blue = currentUnit();
+    const red = livingUnits().find((unit) => unit.team === "red");
+    red.x = blue.x + 1;
+    red.y = blue.y;
+    red.z = blue.z;
+    red.attack = 20;
+    performAttack(red, blue, "ataque normal");
+  `);
+
+  assert.equal(afterAbilityCe, 55);
+  assert.equal(dom.window.eval("currentUnit().hp"), miwaHpBefore - 14);
+  assert.equal(dom.window.eval('livingUnits().find((unit) => unit.team === "red").hp'), redHpBefore - 7);
+  assert.equal(dom.window.eval("currentUnit().ce"), 60);
+
+  dom.window.close();
+});
+
+test("Miwa simple domain hits an enemy ending turn in the surrounding zone", async () => {
+  const dom = await loadGame();
+  const { document } = dom.window;
+  dom.window.Math.random = () => 0;
+  startMiwaMirrorBattle(document);
+
+  dom.window.eval("stopInitiativeClock()");
+  dom.window.eval('selectNextTurn([livingUnits().find((unit) => unit.team === "blue")])');
+  dom.window.eval("currentUnit().ce = 50");
+  dom.window.eval('useSelfAbility(getAbility(currentUnit(), "simpleDomain"))');
+
+  const redHpBefore = dom.window.eval('livingUnits().find((unit) => unit.team === "red").hp');
+  dom.window.eval(`
+    const blue = livingUnits().find((unit) => unit.team === "blue");
+    const red = livingUnits().find((unit) => unit.team === "red");
+    red.x = blue.x + 1;
+    red.y = blue.y + 1;
+    red.z = blue.z;
+    selectNextTurn([red]);
+    advanceToNextTurn();
+    stopInitiativeClock();
+  `);
+
+  assert.equal(dom.window.eval('livingUnits().find((unit) => unit.team === "red").hp'), redHpBefore - 7);
 
   dom.window.close();
 });

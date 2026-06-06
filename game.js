@@ -18,6 +18,7 @@ const state = {
   selectedAbilityId: null,
   abilityMenuOpen: false,
   inspectedTile: null,
+  inspectedUnitId: null,
   reachable: new Set(),
   attackable: new Set(),
   abilityTargets: new Set(),
@@ -45,6 +46,7 @@ const setupTextEl = document.querySelector("#setupText");
 const setupContentEl = document.querySelector("#setupContent");
 const setupActionsEl = document.querySelector("#setupActions");
 const boardEl = document.querySelector("#board");
+const teamListEl = document.querySelector("#teamList");
 const initiativeTrackEl = document.querySelector("#initiativeTrack");
 const phaseTextEl = document.querySelector("#phaseText");
 const roundTextEl = document.querySelector("#roundText");
@@ -90,6 +92,7 @@ function createBattleUnit(character, team, index) {
     mobility: stats.mobility,
     maxCe: stats.maxCe,
     ce: stats.maxCe,
+    activeEffects: {},
     initiative: 0,
     acted: false,
     moved: false,
@@ -113,6 +116,7 @@ function initBattle() {
   state.selectedAbilityId = null;
   state.abilityMenuOpen = false;
   state.inspectedTile = null;
+  state.inspectedUnitId = null;
   state.reachable.clear();
   state.attackable.clear();
   state.abilityTargets.clear();
@@ -281,6 +285,10 @@ function currentUnit() {
   return state.units.find((unit) => unit.id === state.currentUnitId);
 }
 
+function inspectedUnit() {
+  return state.units.find((unit) => unit.id === state.inspectedUnitId);
+}
+
 function enemyTeam(team) {
   return team === "blue" ? "red" : "blue";
 }
@@ -306,8 +314,27 @@ function getAbilities(unit) {
   return unit.abilityIds.map((abilityId) => data.abilities[abilityId]).filter(Boolean);
 }
 
+function getPassive(unit) {
+  return unit.passiveId ? data.passives?.[unit.passiveId] : null;
+}
+
 function distance2d(a, x, y) {
   return Math.abs(a.x - x) + Math.abs(a.y - y);
+}
+
+function isAdjacent8(a, b) {
+  return a.z === b.z && Math.max(Math.abs(a.x - b.x), Math.abs(a.y - b.y)) === 1;
+}
+
+function effectiveDefense(unit) {
+  const multiplier = unit.activeEffects.defenseMultiplier ?? 1;
+  return Math.floor(unit.defense * multiplier);
+}
+
+function defenseLabel(unit) {
+  const multiplier = unit.activeEffects.defenseMultiplier ?? 1;
+  if (multiplier === 1) return String(unit.defense);
+  return `${effectiveDefense(unit)} (${unit.defense} x${multiplier})`;
 }
 
 function selectedAbility() {
@@ -317,6 +344,8 @@ function selectedAbility() {
 }
 
 function abilityDescription(ability) {
+  if (ability.description) return `${ability.description}, ${ability.ceCost} CE`;
+  if (ability.type === "self") return `Personal, ${ability.ceCost} CE`;
   if (ability.type === "attack") return `Ataque x${ability.attackMultiplier}, ${ability.ceCost} CE`;
   return `Apoyo/utilidad, ${ability.ceCost} CE`;
 }
@@ -366,6 +395,7 @@ function tickInitiative(now) {
 function selectNextTurn(ready) {
   ready.sort((a, b) => b.initiative - a.initiative || b.speed - a.speed);
   const next = ready[0];
+  expireTurnEffects(next);
   next.initiative = 0;
   next.acted = false;
   next.moved = false;
@@ -383,6 +413,9 @@ function selectNextTurn(ready) {
 }
 
 function advanceToNextTurn() {
+  const endingUnit = currentUnit();
+  if (endingUnit) processEndOfTurnReactions(endingUnit);
+
   if (checkVictory()) {
     render();
     return;
@@ -428,6 +461,10 @@ function calculateRanges() {
 
   const ability = selectedAbility();
   if (!ability || unit.acted || unit.ce < ability.ceCost) return;
+  if (ability.type === "self") {
+    state.abilityTargets.add(key(unit.x, unit.y, unit.z));
+    return;
+  }
 
   for (let y = 0; y < SIZE; y += 1) {
     for (let x = 0; x < SIZE; x += 1) {
@@ -445,10 +482,63 @@ function calculateRanges() {
 
 function render() {
   renderBoardStack();
+  renderTeamList();
   renderInitiative();
   renderPanel();
   renderTileInfo();
   renderLog();
+}
+
+function renderTeamList() {
+  teamListEl.innerHTML = "";
+  for (const team of ["red", "blue"]) {
+    const section = document.createElement("section");
+    section.className = "team-list-section";
+    const title = document.createElement("h3");
+    title.textContent = `Equipo ${team === "red" ? "rojo" : "azul"}`;
+    section.append(title);
+
+    const teamUnits = state.units.filter((unit) => unit.team === team);
+    if (!teamUnits.length) {
+      const empty = document.createElement("p");
+      empty.textContent = "Sin unidades.";
+      section.append(empty);
+    }
+
+    for (const unit of teamUnits) {
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = [
+        "team-unit-button",
+        unit.hp <= 0 ? "defeated" : "",
+        unit.id === state.currentUnitId ? "current" : "",
+        unit.id === state.inspectedUnitId ? "inspected" : "",
+      ].filter(Boolean).join(" ");
+      button.addEventListener("click", () => inspectUnit(unit.id));
+
+      const portrait = document.createElement("img");
+      portrait.src = portraitUrl(unit);
+      portrait.alt = "";
+      portrait.draggable = false;
+
+      const copy = document.createElement("span");
+      copy.innerHTML = `<strong>${unit.name}</strong><small>${unit.hp}/${unit.maxHp} vida - ${unit.ce}/${unit.maxCe} CE</small>`;
+
+      button.append(portrait, copy);
+      section.append(button);
+    }
+    teamListEl.append(section);
+  }
+}
+
+function inspectUnit(unitId) {
+  const unit = state.units.find((entry) => entry.id === unitId);
+  if (!unit) return;
+  state.inspectedUnitId = unit.id;
+  state.inspectedTile = { x: unit.x, y: unit.y, z: unit.z };
+  state.abilityMenuOpen = false;
+  state.selectedAbilityId = null;
+  render();
 }
 
 function renderBoardStack() {
@@ -549,18 +639,13 @@ function portraitUrl(unit) {
 
 function renderInitiative() {
   initiativeTrackEl.innerHTML = '<span class="finish-marker" aria-hidden="true"></span>';
-  const compact = window.matchMedia("(max-width: 980px)").matches;
 
   for (const unit of livingUnits()) {
     const token = document.createElement("div");
     token.className = `initiative-token ${unit.id === state.currentUnitId ? "current" : ""}`;
     const percent = Math.max(6, Math.min(94, unit.initiative));
-    if (compact) {
-      token.style.left = `${percent}%`;
-      token.style.top = "65px";
-    } else {
-      token.style.top = `${percent}%`;
-    }
+    token.style.left = `${percent}%`;
+    token.style.top = "50%";
     const portrait = document.createElement("img");
     portrait.className = "initiative-portrait";
     portrait.src = portraitUrl(unit);
@@ -577,9 +662,10 @@ function renderInitiative() {
 
 function renderPanel() {
   const unit = currentUnit();
+  const displayUnit = inspectedUnit() ?? unit;
   roundTextEl.textContent = `Ronda ${state.round}`;
 
-  if (!unit) {
+  if (!displayUnit) {
     phaseTextEl.textContent = state.gameOver ? "Batalla terminada" : "Calculando turno";
     unitCardEl.innerHTML = "";
     abilityMenuEl.classList.add("hidden");
@@ -587,32 +673,49 @@ function renderPanel() {
     return;
   }
 
-  const abilities = getAbilities(unit);
-  phaseTextEl.textContent = `${unit.team === "blue" ? "Azul" : "Rojo"} juega con ${unit.name}.`;
+  const abilities = getAbilities(displayUnit);
+  phaseTextEl.textContent = unit
+    ? `${unit.team === "blue" ? "Azul" : "Rojo"} juega con ${unit.name}.`
+    : state.gameOver ? "Batalla terminada" : "Calculando turno";
   unitCardEl.innerHTML = `
-    <h2>${unit.name}</h2>
+    <h2>${displayUnit.name}</h2>
     <div class="stat-grid">
-      <div class="stat"><strong>Equipo</strong>${unit.team === "blue" ? "Azul" : "Rojo"}</div>
-      <div class="stat"><strong>Nivel</strong>${unit.z + 1}</div>
-      <div class="stat"><strong>Vida</strong>${unit.hp}/${unit.maxHp}</div>
-      <div class="stat"><strong>CE</strong>${unit.ce}/${unit.maxCe}</div>
-      <div class="stat"><strong>Ataque</strong>${unit.attack}</div>
-      <div class="stat"><strong>Defensa</strong>${unit.defense}</div>
-      <div class="stat"><strong>Movilidad</strong>${unit.mobility}</div>
-      <div class="stat"><strong>Velocidad</strong>${unit.speed}/100</div>
+      <div class="stat"><strong>Equipo</strong>${displayUnit.team === "blue" ? "Azul" : "Rojo"}</div>
+      <div class="stat"><strong>Nivel</strong>${displayUnit.z + 1}</div>
+      <div class="stat"><strong>Vida</strong>${displayUnit.hp}/${displayUnit.maxHp}</div>
+      <div class="stat"><strong>CE</strong>${displayUnit.ce}/${displayUnit.maxCe}</div>
+      <div class="stat"><strong>Ataque</strong>${displayUnit.attack}</div>
+      <div class="stat"><strong>Defensa</strong>${defenseLabel(displayUnit)}</div>
+      <div class="stat"><strong>Movilidad</strong>${displayUnit.mobility}</div>
+      <div class="stat"><strong>Velocidad</strong>${displayUnit.speed}/100</div>
     </div>
+    ${displayUnit.id !== unit?.id && unit ? `<div class="ability-line">Turno actual: ${unit.name}</div>` : ""}
+    ${getPassive(displayUnit) ? `<div class="ability-line">Pasiva: ${getPassive(displayUnit).name}</div>` : ""}
     <div class="ability-line">${abilities.length} habilidad${abilities.length === 1 ? "" : "es"} disponible${abilities.length === 1 ? "" : "s"}</div>
+    <div class="ability-list">${abilities.map((ability) => `<div><strong>${ability.name}</strong><span>${abilityDescription(ability)}</span></div>`).join("")}</div>
   `;
+
+  if (!unit) {
+    attackBtn.disabled = true;
+    skillBtn.disabled = true;
+    stairsUpBtn.disabled = true;
+    stairsDownBtn.disabled = true;
+    endBtn.disabled = state.gameOver;
+    abilityMenuEl.classList.add("hidden");
+    abilityMenuEl.innerHTML = "";
+    return;
+  }
 
   const onStair = stairAt(unit.x, unit.y, unit.z);
   attackBtn.disabled = state.gameOver || unit.acted || !state.attackable.size;
   attackBtn.classList.toggle("active", state.selectedAction === "attack");
-  skillBtn.disabled = state.gameOver || unit.acted || !abilities.length;
+  const turnAbilities = getAbilities(unit);
+  skillBtn.disabled = state.gameOver || unit.acted || !turnAbilities.length;
   skillBtn.classList.toggle("active", state.abilityMenuOpen);
   stairsUpBtn.disabled = state.gameOver || !onStair || !onStair.levels.includes(unit.z + 1) || Boolean(unitAt(unit.x, unit.y, unit.z + 1));
   stairsDownBtn.disabled = state.gameOver || !onStair || !onStair.levels.includes(unit.z - 1) || Boolean(unitAt(unit.x, unit.y, unit.z - 1));
   endBtn.disabled = state.gameOver;
-  renderAbilityMenu(unit, abilities);
+  renderAbilityMenu(unit, turnAbilities);
 }
 
 function renderAbilityMenu(unit, abilities) {
@@ -627,6 +730,10 @@ function renderAbilityMenu(unit, abilities) {
     button.disabled = state.gameOver || unit.acted || unit.ce < ability.ceCost;
     button.innerHTML = `<strong>${ability.name}</strong><span>${abilityDescription(ability)}</span>`;
     button.addEventListener("click", () => {
+      if (ability.type === "self") {
+        useSelfAbility(ability);
+        return;
+      }
       state.selectedAction = "skill";
       state.selectedAbilityId = ability.id;
       calculateRanges();
@@ -682,7 +789,7 @@ function renderTileInfo() {
     <div><strong>Vida</strong>${occupant.hp}/${occupant.maxHp}</div>
     <div><strong>CE</strong>${occupant.ce}/${occupant.maxCe}</div>
     <div><strong>Ataque</strong>${occupant.attack}</div>
-    <div><strong>Defensa</strong>${occupant.defense}</div>
+    <div><strong>Defensa</strong>${defenseLabel(occupant)}</div>
     <div><strong>Movilidad</strong>${occupant.mobility}</div>
     <div><strong>Velocidad</strong>${occupant.speed}</div>
   `;
@@ -704,6 +811,8 @@ function handleTileClick(x, y, z) {
   const tileKey = key(x, y, z);
   const ability = selectedAbility();
 
+  if (occupant) state.inspectedUnitId = occupant.id;
+
   if (state.selectedAction === "attack" && occupant?.team === enemyTeam(unit.team)) {
     useOffense(occupant);
     return;
@@ -712,6 +821,10 @@ function handleTileClick(x, y, z) {
   if (state.selectedAction === "skill" && ability && state.abilityTargets.has(tileKey)) {
     if (ability.type === "attack" && occupant?.team === enemyTeam(unit.team)) {
       useOffense(occupant);
+      return;
+    }
+    if (ability.type === "self" && occupant?.id === unit.id) {
+      useSelfAbility(ability);
       return;
     }
     if (ability.type !== "attack") {
@@ -743,34 +856,103 @@ function changePreviewLevel(direction) {
   render();
 }
 
+function expireTurnEffects(unit) {
+  const effects = unit.activeEffects;
+  if (effects.simpleDomain) addLog(`Dominio simple de ${unit.name} termina.`);
+  if (effects.counterattack) addLog(`Contraataque de ${unit.name} termina.`);
+  unit.activeEffects = {};
+}
+
+function processEndOfTurnReactions(endingUnit) {
+  if (endingUnit.hp <= 0) return;
+
+  for (const defender of livingUnits()) {
+    if (defender.team === endingUnit.team || !defender.activeEffects.simpleDomain) continue;
+    if (!isAdjacent8(defender, endingUnit)) continue;
+    performAttack(defender, endingUnit, "Dominio simple", { triggersCounterattack: false });
+    if (endingUnit.hp === 0) break;
+  }
+}
+
+function recoverDedicationCe(unit) {
+  if (unit.passiveId !== "dedication" || unit.ce >= unit.maxCe) return;
+  const amount = Math.floor(Math.random() * 11) + 5;
+  const before = unit.ce;
+  unit.ce = Math.min(unit.maxCe, unit.ce + amount);
+  addLog(`${unit.name} activa Dedicacion y recupera ${unit.ce - before} CE.`);
+}
+
+function performAttack(attacker, target, label, options = {}) {
+  const attackMultiplier = options.attackMultiplier ?? 1;
+  const triggersCounterattack = options.triggersCounterattack ?? true;
+  const damage = Math.max(1, Math.floor(attacker.attack * attackMultiplier - effectiveDefense(target)));
+
+  target.hp = Math.max(0, target.hp - damage);
+  addLog(`${attacker.name} usa ${label} contra ${target.name}: ${damage} dano.`);
+  if (target.hp === 0) {
+    addLog(`${target.name} queda fuera.`);
+    return damage;
+  }
+
+  if (triggersCounterattack) tryCounterattack(target, attacker);
+  return damage;
+}
+
+function tryCounterattack(defender, attacker) {
+  if (!defender.activeEffects.counterattack || defender.hp <= 0 || attacker.hp <= 0) return;
+  performAttack(defender, attacker, "Contraataque", { triggersCounterattack: false });
+  recoverDedicationCe(defender);
+}
+
 function useOffense(target) {
   const unit = currentUnit();
   if (!unit || unit.acted || !state.attackable.has(target.id)) return;
 
-  let damage = Math.max(1, unit.attack - target.defense);
   let label = "ataque normal";
+  let attackMultiplier = 1;
 
   if (state.selectedAction === "skill") {
     const ability = getAbility(unit, state.selectedAbilityId);
     if (!ability || unit.ce < ability.ceCost) return;
     unit.ce -= ability.ceCost;
-    damage = Math.max(1, Math.floor(unit.attack * ability.attackMultiplier - target.defense));
+    attackMultiplier = ability.attackMultiplier;
     label = ability.name;
   }
 
-  target.hp = Math.max(0, target.hp - damage);
+  performAttack(unit, target, label, { attackMultiplier });
   unit.acted = true;
   unit.moved = true;
   state.selectedAbilityId = null;
   state.abilityMenuOpen = false;
-  addLog(`${unit.name} usa ${label} contra ${target.name}: ${damage} dano.`);
-  if (target.hp === 0) addLog(`${target.name} queda fuera.`);
 
   if (checkVictory()) {
     render();
     return;
   }
 
+  calculateRanges();
+  render();
+}
+
+function useSelfAbility(ability) {
+  const unit = currentUnit();
+  if (!unit || !ability || unit.acted || unit.ce < ability.ceCost) return;
+
+  unit.ce -= ability.ceCost;
+  if (ability.effect === "simpleDomain") {
+    unit.activeEffects.simpleDomain = true;
+  }
+  if (ability.effect === "counterattack") {
+    unit.activeEffects.counterattack = true;
+    unit.activeEffects.defenseMultiplier = ability.defenseMultiplier;
+  }
+
+  unit.acted = true;
+  unit.moved = true;
+  state.selectedAbilityId = null;
+  state.abilityMenuOpen = false;
+  addLog(`${unit.name} usa ${ability.name}.`);
+  recoverDedicationCe(unit);
   calculateRanges();
   render();
 }

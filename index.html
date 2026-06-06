@@ -4,7 +4,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Geometria Tactics</title>
-    <link rel="stylesheet" href="styles.css" />
+    <link rel="stylesheet" href="styles.css?v=5" />
   </head>
   <body>
     <main class="app">
@@ -31,14 +31,20 @@
       </section>
 
       <section class="battlefield hidden" id="battlefield">
-        <aside class="panel initiative-panel">
-          <div class="panel-title">Turnos</div>
-          <div class="initiative-track" id="initiativeTrack" aria-label="Barra de iniciativa"></div>
+        <aside class="panel roster-panel">
+          <div class="panel-title">Unidades</div>
+          <div id="teamList" class="team-list"></div>
+          <div class="panel-title small">Registro</div>
+          <ol id="log" class="log" aria-live="polite"></ol>
         </aside>
 
         <section class="board-area">
           <div class="board-shell">
             <div class="stacked-boards" id="board" aria-label="Tableros tacticos apilados"></div>
+          </div>
+          <div class="panel initiative-panel">
+            <div class="panel-title">Barra de accion</div>
+            <div class="initiative-track" id="initiativeTrack" aria-label="Barra de accion"></div>
           </div>
         </section>
 
@@ -55,16 +61,14 @@
           </div>
           <div id="abilityMenu" class="ability-menu hidden"></div>
           <div id="tileInfo" class="tile-info hidden"></div>
-          <div class="panel-title small">Registro</div>
-          <ol id="log" class="log" aria-live="polite"></ol>
         </aside>
       </section>
     </main>
 
-    <script src="maps/placeholder-map.js?v=2"></script>
-    <script src="statistics/base-statistics.js?v=2"></script>
-    <script src="abilities/basic-abilities.js?v=2"></script>
-    <script src="characters/geometric-characters.js?v=2"></script>
-    <script src="game.js?v=2"></script>
+    <script src="maps/placeholder-map.js?v=5"></script>
+    <script src="statistics/base-statistics.js?v=5"></script>
+    <script src="abilities/basic-abilities.js?v=5"></script>
+    <script src="characters/geometric-characters.js?v=5"></script>
+    <script src="game.js?v=5"></script>
   </body>
 </html>

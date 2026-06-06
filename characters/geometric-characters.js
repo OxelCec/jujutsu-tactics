@@ -53,7 +53,8 @@ window.GameData.characters = [
     model: { shape: "circle" },
     statProfile: normalStats(),
     stats: window.GameData.statsFromProfile(1, normalStats()),
-    abilityIds: ["strike", "guard"],
+    abilityIds: ["simpleDomain", "counterattack"],
+    passiveId: "dedication",
   },
   {
     id: "choso",
