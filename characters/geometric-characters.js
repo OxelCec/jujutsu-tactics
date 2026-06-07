@@ -16,6 +16,13 @@ const yujiStats = {
   defense: "normal",
 };
 
+const chosoStats = {
+  maxHp: "normal",
+  speed: "normal",
+  attack: "bastante",
+  defense: "poco",
+};
+
 window.GameData.characters = [
   {
     id: "megumi",
@@ -69,8 +76,10 @@ window.GameData.characters = [
     name: "Choso",
     cost: 3,
     model: { shape: "square" },
-    statProfile: normalStats(),
-    stats: window.GameData.statsFromProfile(3, normalStats()),
-    abilityIds: ["strike", "guard"],
+    statProfile: chosoStats,
+    stats: window.GameData.statsFromProfile(3, chosoStats, { maxCe: 100 }),
+    abilityIds: ["switchChosoStance", "piercingBlood", "supernova"],
+    passiveId: "poisonedBlood",
+    defaultStance: "blood",
   },
 ];

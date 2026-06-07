@@ -11,8 +11,14 @@ const SUKUNA_TRANSFORM_ATTACK_MULTIPLIER = 4;
 const SUKUNA_FINGER_DAMAGE_REDUCTION = 0.2;
 const TURN_CE_REGEN_RATE = 0.08;
 const MIN_CE_STAT_SCALE = 0.75;
-const DIRECTIONS = ["north", "east", "south", "west"];
-const TEST_UNIT_MODEL = "assets/characters/yuji-testeo.jpg";
+const CHOSO_BLOOD_RANGE = 4;
+const CHOSO_BLOOD_MELEE_MULTIPLIER = 0.75;
+const CHOSO_BLOOD_RANGED_MULTIPLIER = 1;
+const CHOSO_COMBAT_MULTIPLIER = 1.35;
+const CHOSO_BLOOD_DEFENSE_MULTIPLIER = 0.85;
+const CHOSO_COMBAT_DEFENSE_MULTIPLIER = 1.3;
+const POISON_MAX_STACKS = 3;
+const POISON_DAMAGE_PER_STACK = 4;
 let initiativeFrameId = null;
 let lastInitiativeAt = 0;
 
@@ -98,7 +104,6 @@ function createBattleUnit(character, team, index) {
     ...spawn,
     shape: character.model.shape,
     facing: "south",
-    directionModels: createDirectionModels(character),
     maxHp: stats.maxHp,
     hp: stats.maxHp,
     speed: stats.speed,
@@ -108,6 +113,8 @@ function createBattleUnit(character, team, index) {
     maxCe: stats.maxCe,
     ce: stats.maxCe,
     focus: character.passiveId === "focus" ? 0 : null,
+    stance: character.defaultStance ?? null,
+    poisonStacks: 0,
     sukunaFingers: 0,
     attackedThisTurn: false,
     abilityCooldowns: {},
@@ -418,11 +425,42 @@ function getAbility(unit, abilityId = "strike") {
 }
 
 function getAbilities(unit) {
-  return unit.abilityIds.map((abilityId) => data.abilities[abilityId]).filter(Boolean);
+  return unit.abilityIds
+    .map((abilityId) => data.abilities[abilityId])
+    .filter((ability) => ability && isAbilityAvailableInStance(unit, ability));
 }
 
 function getPassive(unit) {
   return unit.passiveId ? data.passives?.[unit.passiveId] : null;
+}
+
+function isAbilityAvailableInStance(unit, ability) {
+  return !ability.requiredStance || unit.stance === ability.requiredStance;
+}
+
+function isChoso(unit) {
+  return unit?.characterId === "choso";
+}
+
+function stanceLabel(unit) {
+  if (unit.stance === "blood") return "Modo sangre";
+  if (unit.stance === "combat") return "Modo combate";
+  return "";
+}
+
+function basicAttackRange(unit) {
+  return isChoso(unit) && unit.stance === "blood" ? CHOSO_BLOOD_RANGE : 1;
+}
+
+function stanceDefenseMultiplier(unit) {
+  if (!isChoso(unit)) return 1;
+  return unit.stance === "combat" ? CHOSO_COMBAT_DEFENSE_MULTIPLIER : CHOSO_BLOOD_DEFENSE_MULTIPLIER;
+}
+
+function chosoBasicAttackMultiplier(unit, target) {
+  if (!isChoso(unit)) return 1;
+  if (unit.stance === "combat") return CHOSO_COMBAT_MULTIPLIER;
+  return distance2d(unit, target.x, target.y) === 1 ? CHOSO_BLOOD_MELEE_MULTIPLIER : CHOSO_BLOOD_RANGED_MULTIPLIER;
 }
 
 function isYuji(unit) {
@@ -491,11 +529,11 @@ function effectiveSpeed(unit) {
 
 function effectiveDefense(unit) {
   const multiplier = unit.activeEffects.defenseMultiplier ?? 1;
-  return Math.max(1, Math.floor(unit.defense * ceStatScale(unit) * multiplier));
+  return Math.max(1, Math.floor(unit.defense * ceStatScale(unit) * multiplier * stanceDefenseMultiplier(unit)));
 }
 
 function defenseLabel(unit) {
-  const multiplier = unit.activeEffects.defenseMultiplier ?? 1;
+  const multiplier = (unit.activeEffects.defenseMultiplier ?? 1) * stanceDefenseMultiplier(unit);
   if (multiplier === 1) return String(effectiveDefense(unit));
   return `${effectiveDefense(unit)} (${unit.defense} x${multiplier})`;
 }
@@ -525,16 +563,50 @@ function regenerateTurnCe(unit) {
   if (unit.ce !== before) addLog(`${unit.name} recupera ${unit.ce - before} CE.`);
 }
 
+function applyPoison(target, amount = 1) {
+  if (target.hp <= 0) return;
+  const before = target.poisonStacks ?? 0;
+  target.poisonStacks = Math.min(POISON_MAX_STACKS, before + amount);
+  if (target.poisonStacks !== before) {
+    addLog(`${target.name} recibe Veneno (${target.poisonStacks}/${POISON_MAX_STACKS}).`);
+  }
+}
+
+function poisonDamageMultiplier(attacker, target) {
+  const passive = getPassive(attacker);
+  if (passive?.id !== "poisonedBlood") return 1;
+  return 1 + (target.poisonStacks ?? 0) * passive.damagePerPoisonStack;
+}
+
+function processPoisonStartOfTurn(unit) {
+  if (unit.hp <= 0 || !unit.poisonStacks) return false;
+  const damage = unit.poisonStacks * POISON_DAMAGE_PER_STACK;
+  unit.hp = Math.max(0, unit.hp - damage);
+  addLog(`${unit.name} sufre ${damage} dano por Veneno.`);
+  if (unit.hp > 0) return false;
+  handleUnitDefeated(unit);
+  if (checkVictory()) {
+    render();
+    return true;
+  }
+  state.currentUnitId = null;
+  render();
+  startInitiativeClock();
+  return true;
+}
+
 function selectedAbility() {
   const unit = currentUnit();
   if (!unit || !state.selectedAbilityId) return null;
-  return getAbility(unit, state.selectedAbilityId);
+  const ability = getAbility(unit, state.selectedAbilityId);
+  return ability && isAbilityAvailableInStance(unit, ability) ? ability : null;
 }
 
 function abilityDescription(ability) {
   const cooldown = ability.cooldownTurns ? `, CD ${ability.cooldownTurns}` : "";
   if (ability.description) return `${ability.description}, ${ability.ceCost} CE${cooldown}`;
   if (ability.type === "self") return `Personal, ${ability.ceCost} CE${cooldown}`;
+  if (ability.type === "areaAttack") return `Area ${ability.radius}, x${ability.attackMultiplier}, ${ability.ceCost} CE${cooldown}`;
   if (ability.type === "attack") return `Ataque x${ability.attackMultiplier}, ${ability.ceCost} CE${cooldown}`;
   return `Apoyo/utilidad, ${ability.ceCost} CE${cooldown}`;
 }
@@ -597,6 +669,7 @@ function selectNextTurn(ready) {
   const next = ordered[0].unit;
   if (handleDeadYujiTurn(next)) return;
   expireTurnEffects(next);
+  if (processPoisonStartOfTurn(next)) return;
   regenerateTurnCe(next);
   tickAbilityCooldowns(next);
   next.initiative = 0;
@@ -686,7 +759,7 @@ function calculateRanges() {
   if (!unit.acted) {
     for (const enemy of livingUnits().filter((target) => target.team !== unit.team && target.z === unit.z)) {
       const distance = distance2d(unit, enemy.x, enemy.y);
-      if (distance === 1) state.attackable.add(enemy.id);
+      if (distance > 0 && distance <= basicAttackRange(unit)) state.attackable.add(enemy.id);
     }
   }
 
@@ -701,7 +774,11 @@ function calculateRanges() {
     for (let x = 0; x < SIZE; x += 1) {
       if (distance2d(unit, x, y) > ability.range) continue;
       const occupant = livingUnitAt(x, y, unit.z);
-      if (ability.type === "attack" && occupant?.team !== unit.team) {
+      const validLine = ability.pattern !== "line" || unit.x === x || unit.y === y;
+      if (ability.type === "attack" && occupant?.team !== unit.team && validLine) {
+        state.abilityTargets.add(key(x, y, unit.z));
+      }
+      if (ability.type === "areaAttack") {
         state.abilityTargets.add(key(x, y, unit.z));
       }
       if (ability.type !== "attack" && (!occupant || occupant.team === unit.team)) {
@@ -762,7 +839,8 @@ function renderTeamList() {
       const fingerInfo = hasYujiInBattle()
         ? ` - ${unit.sukunaFingers} dedos${isYuji(unit) ? ` - ${yujiFingerState(unit)?.consumed ?? 0} consumidos` : ""}${totalFingerContributions(unit) ? ` - ${totalFingerContributions(unit)} dados` : ""}`
         : "";
-      copy.innerHTML = `<strong>${unit.name}</strong><small>${unit.hp}/${unit.maxHp} vida - ${unit.ce}/${unit.maxCe} CE${fingerInfo}</small>`;
+      const statusInfo = `${unit.stance ? ` - ${stanceLabel(unit)}` : ""}${unit.poisonStacks ? ` - Veneno ${unit.poisonStacks}` : ""}`;
+      copy.innerHTML = `<strong>${unit.name}</strong><small>${unit.hp}/${unit.maxHp} vida - ${unit.ce}/${unit.maxCe} CE${statusInfo}${fingerInfo}</small>`;
 
       button.append(portrait, copy);
       section.append(button);
@@ -852,22 +930,10 @@ function renderTile(x, y, z) {
 }
 
 function renderUnit(unit, extraClass = "") {
-  const model = unit.directionModels?.[unit.facing] ?? unit.model;
   const el = document.createElement("span");
-  el.className = `unit ${model.shape ?? "image-model"} ${unit.team}-unit ${unit.hp <= 0 ? "dead-unit" : ""} ${extraClass}`.trim();
-  if (model.image) {
-    const image = document.createElement("img");
-    image.src = model.image;
-    image.alt = unit.name;
-    image.draggable = false;
-    el.append(image);
-  }
+  el.className = `unit ${unit.shape} ${unit.team}-unit ${unit.hp <= 0 ? "dead-unit" : ""} ${extraClass}`.trim();
   el.title = unit.name;
   return el;
-}
-
-function createDirectionModels(character) {
-  return Object.fromEntries(DIRECTIONS.map((direction) => [direction, { image: TEST_UNIT_MODEL }]));
 }
 
 function portraitUrl(unit) {
@@ -941,6 +1007,8 @@ function renderPanel() {
       <div class="stat"><strong>Defensa</strong>${defenseLabel(displayUnit)}</div>
       <div class="stat"><strong>Movilidad</strong>${displayUnit.mobility}</div>
       <div class="stat"><strong>Velocidad</strong>${effectiveSpeed(displayUnit)}</div>
+      ${displayUnit.stance ? `<div class="stat"><strong>Postura</strong>${stanceLabel(displayUnit)}</div>` : ""}
+      ${displayUnit.poisonStacks ? `<div class="stat"><strong>Veneno</strong>${displayUnit.poisonStacks}/${POISON_MAX_STACKS}</div>` : ""}
       ${displayUnit.focus !== null ? `<div class="stat"><strong>Focus</strong>${displayUnit.focus}/5</div>` : ""}
       ${hasYujiInBattle() ? `<div class="stat"><strong>Dedos</strong>${displayUnit.sukunaFingers}</div>` : ""}
       ${hasYujiInBattle() ? `<div class="stat"><strong>Entregados</strong>${totalFingerContributions(displayUnit)}</div>` : ""}
@@ -948,6 +1016,7 @@ function renderPanel() {
     </div>
     ${displayUnit.id !== unit?.id && unit ? `<div class="ability-line">Turno actual: ${unit.name}</div>` : ""}
     ${getPassive(displayUnit) ? `<div class="ability-line">Pasiva: ${getPassive(displayUnit).name}</div>` : ""}
+    ${displayUnit.stance ? `<div class="ability-line">${displayUnit.stance === "blood" ? "Ataque basico a distancia, aplica Veneno." : "Ataque basico cuerpo a cuerpo mejorado, mas defensa."}</div>` : ""}
     <div class="ability-line">${abilities.length} habilidad${abilities.length === 1 ? "" : "es"} disponible${abilities.length === 1 ? "" : "s"}</div>
     <div class="ability-list">${abilities.map((ability) => `<div><strong>${ability.name}</strong><span>${abilityDescription(ability)}</span></div>`).join("")}</div>
   `;
@@ -1075,6 +1144,8 @@ function renderTileInfo() {
     <div><strong>Defensa</strong>${defenseLabel(occupant)}</div>
     <div><strong>Movilidad</strong>${occupant.mobility}</div>
     <div><strong>Velocidad</strong>${effectiveSpeed(occupant)}</div>
+    ${occupant.stance ? `<div><strong>Postura</strong>${stanceLabel(occupant)}</div>` : ""}
+    ${occupant.poisonStacks ? `<div><strong>Veneno</strong>${occupant.poisonStacks}/${POISON_MAX_STACKS}</div>` : ""}
     ${occupant.focus !== null ? `<div><strong>Focus</strong>${occupant.focus}/5</div>` : ""}
     ${hasYujiInBattle() ? `<div><strong>Dedos</strong>${occupant.sukunaFingers}</div>` : ""}
     ${hasYujiInBattle() ? `<div><strong>Entregados</strong>${totalFingerContributions(occupant)}</div>` : ""}
@@ -1108,6 +1179,10 @@ function handleTileClick(x, y, z) {
   if (state.selectedAction === "skill" && ability && state.abilityTargets.has(tileKey)) {
     if (ability.type === "attack" && occupant?.team === enemyTeam(unit.team)) {
       useOffense(occupant);
+      return;
+    }
+    if (ability.type === "areaAttack") {
+      useAreaAttackAbility(x, y, z);
       return;
     }
     if (ability.type === "self" && occupant?.id === unit.id) {
@@ -1224,7 +1299,12 @@ function performAttack(attacker, target, label, options = {}) {
   const canBlackFlash = options.canBlackFlash ?? false;
   const blackFlash = canBlackFlash && getPassive(attacker)?.id === "focus" && Math.random() < focusChance(attacker);
   const damageMultiplier = blackFlash ? getPassive(attacker).blackFlashDamageMultiplier : 1;
-  const damage = Math.max(1, Math.floor((effectiveAttack(attacker) * attackMultiplier - effectiveDefense(target)) * damageMultiplier));
+  const targetDefenseMultiplier = options.targetDefenseMultiplier ?? 1;
+  const targetDefense = Math.floor(effectiveDefense(target) * targetDefenseMultiplier);
+  const damage = Math.max(
+    1,
+    Math.floor((effectiveAttack(attacker) * attackMultiplier - targetDefense) * damageMultiplier * poisonDamageMultiplier(attacker, target)),
+  );
 
   const wasAlive = target.hp > 0;
   target.hp = Math.max(0, target.hp - damage);
@@ -1240,6 +1320,8 @@ function performAttack(attacker, target, label, options = {}) {
     handleUnitDefeated(target);
     return damage;
   }
+
+  if (options.appliesPoison) applyPoison(target);
 
   if (triggersCounterattack) tryCounterattack(target, attacker);
   return damage;
@@ -1264,21 +1346,120 @@ function useOffense(target) {
   if (!unit || unit.hp <= 0 || unit.acted || !state.attackable.has(target.id)) return;
 
   let label = "ataque normal";
-  let attackMultiplier = 1;
+  let attackMultiplier = chosoBasicAttackMultiplier(unit, target);
   let canBlackFlash = true;
+  let targetDefenseMultiplier = 1;
+  let appliesPoison = isChoso(unit) && unit.stance === "blood";
+  let triggersCounterattack = !(isChoso(unit) && unit.stance === "blood" && distance2d(unit, target.x, target.y) > 1);
+
+  if (isChoso(unit)) {
+    label = unit.stance === "combat" ? "sangre endurecida" : "proyectil de sangre";
+    canBlackFlash = false;
+  }
 
   if (state.selectedAction === "skill") {
     const ability = getAbility(unit, state.selectedAbilityId);
-    if (!ability || unit.ce < ability.ceCost || abilityCooldown(unit, ability.id) > 0) return;
+    if (!ability || !isAbilityAvailableInStance(unit, ability) || unit.ce < ability.ceCost || abilityCooldown(unit, ability.id) > 0) return;
+    if (ability.pattern === "line") {
+      useLineAttackAbility(unit, target, ability);
+      return;
+    }
     unit.ce -= ability.ceCost;
     setAbilityCooldown(unit, ability);
     attackMultiplier = ability.attackMultiplier;
     label = ability.name;
     canBlackFlash = false;
+    targetDefenseMultiplier = ability.defenseMultiplier ?? 1;
+    appliesPoison = Boolean(ability.appliesPoison);
+    triggersCounterattack = false;
   }
 
-  performAttack(unit, target, label, { attackMultiplier, canBlackFlash });
+  performAttack(unit, target, label, { attackMultiplier, canBlackFlash, targetDefenseMultiplier, appliesPoison, triggersCounterattack });
   gainFocusAfterAttack(unit);
+  unit.acted = true;
+  unit.moved = true;
+  state.selectedAbilityId = null;
+  state.abilityMenuOpen = false;
+  state.pendingTransfer = null;
+
+  if (checkVictory()) {
+    render();
+    return;
+  }
+
+  calculateRanges();
+  render();
+}
+
+function lineTargetsFor(unit, target, ability) {
+  const dx = Math.sign(target.x - unit.x);
+  const dy = Math.sign(target.y - unit.y);
+  if (dx && dy) return [];
+  if (!dx && !dy) return [];
+
+  const targets = [];
+  for (let step = 1; step <= ability.range; step += 1) {
+    const x = unit.x + dx * step;
+    const y = unit.y + dy * step;
+    if (x < 0 || x >= SIZE || y < 0 || y >= SIZE) break;
+    const occupant = livingUnitAt(x, y, unit.z);
+    if (occupant && occupant.team !== unit.team) targets.push(occupant);
+  }
+  return targets;
+}
+
+function useLineAttackAbility(unit, target, ability) {
+  const targets = lineTargetsFor(unit, target, ability);
+  if (!targets.length) return;
+
+  unit.ce -= ability.ceCost;
+  setAbilityCooldown(unit, ability);
+  for (const lineTarget of targets) {
+    performAttack(unit, lineTarget, ability.name, {
+      attackMultiplier: ability.attackMultiplier,
+      targetDefenseMultiplier: ability.defenseMultiplier ?? 1,
+      appliesPoison: ability.appliesPoison,
+      triggersCounterattack: false,
+      canBlackFlash: false,
+    });
+  }
+  unit.acted = true;
+  unit.moved = true;
+  state.selectedAbilityId = null;
+  state.abilityMenuOpen = false;
+  state.pendingTransfer = null;
+
+  if (checkVictory()) {
+    render();
+    return;
+  }
+
+  calculateRanges();
+  render();
+}
+
+function useAreaAttackAbility(x, y, z) {
+  const unit = currentUnit();
+  const ability = selectedAbility();
+  if (!unit || unit.hp <= 0 || !ability || ability.type !== "areaAttack" || unit.acted || unit.ce < ability.ceCost || abilityCooldown(unit, ability.id) > 0) return;
+
+  const targets = livingUnits().filter((target) =>
+    target.team !== unit.team
+    && target.z === z
+    && Math.max(Math.abs(target.x - x), Math.abs(target.y - y)) <= ability.radius,
+  );
+  if (!targets.length) return;
+
+  unit.ce -= ability.ceCost;
+  setAbilityCooldown(unit, ability);
+  for (const target of targets) {
+    performAttack(unit, target, ability.name, {
+      attackMultiplier: ability.attackMultiplier,
+      appliesPoison: ability.appliesPoison,
+      triggersCounterattack: false,
+      canBlackFlash: false,
+    });
+  }
   unit.acted = true;
   unit.moved = true;
   state.selectedAbilityId = null;
@@ -1296,7 +1477,7 @@ function useOffense(target) {
 
 function useSelfAbility(ability) {
   const unit = currentUnit();
-  if (!unit || unit.hp <= 0 || !ability || unit.acted || unit.ce < ability.ceCost || abilityCooldown(unit, ability.id) > 0) return;
+  if (!unit || unit.hp <= 0 || !ability || !isAbilityAvailableInStance(unit, ability) || unit.acted || unit.ce < ability.ceCost || abilityCooldown(unit, ability.id) > 0) return;
 
   unit.ce -= ability.ceCost;
   setAbilityCooldown(unit, ability);
@@ -1307,13 +1488,16 @@ function useSelfAbility(ability) {
     unit.activeEffects.counterattack = true;
     unit.activeEffects.defenseMultiplier = ability.defenseMultiplier;
   }
+  if (ability.effect === "switchChosoStance") {
+    unit.stance = unit.stance === "blood" ? "combat" : "blood";
+  }
 
   unit.acted = true;
   unit.moved = true;
   state.selectedAbilityId = null;
   state.abilityMenuOpen = false;
   state.pendingTransfer = null;
-  addLog(`${unit.name} usa ${ability.name}.`);
+  addLog(`${unit.name} usa ${ability.name}${unit.stance ? `: ${stanceLabel(unit)}` : ""}.`);
   recoverDedicationCe(unit);
   calculateRanges();
   render();

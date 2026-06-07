@@ -58,6 +58,15 @@ function clickRosterCard(document, characterName) {
   card.click();
 }
 
+function clickAbility(document, abilityName) {
+  const button = [...document.querySelectorAll("#abilityMenu button")].find((entry) =>
+    entry.textContent.includes(abilityName),
+  );
+  assert.ok(button, `Expected ability button for ${abilityName}`);
+  assert.equal(button.disabled, false, `Expected ${abilityName} to be usable`);
+  button.click();
+}
+
 test("can select both teams, choose the map, and start a battle", async () => {
   const dom = await loadGame();
   const { document } = dom.window;
@@ -79,6 +88,9 @@ test("can select both teams, choose the map, and start a battle", async () => {
   assert.equal(document.querySelectorAll(".level-board").length, 3);
   assert.equal(document.querySelectorAll(".tile").length, 300);
   assert.equal(document.querySelectorAll(".unit").length, 4);
+  assert.equal(document.querySelectorAll(".unit.image-model, .unit img").length, 0);
+  assert.equal(document.querySelectorAll(".unit.blue-unit").length, 2);
+  assert.equal(document.querySelectorAll(".unit.red-unit").length, 2);
   assert.equal(document.querySelectorAll(".finger-token").length, 7);
   assert.match(document.querySelector("#teamList").textContent, /Equipo rojo/);
   assert.match(document.querySelector("#teamList").textContent, /Equipo azul/);
@@ -205,8 +217,8 @@ test("Miwa counterattacks and recovers CE with Dedicacion", async () => {
   `);
 
   assert.equal(afterAbilityCe, 25);
-  assert.equal(dom.window.eval("currentUnit().hp"), miwaHpBefore - 15);
-  assert.equal(dom.window.eval('livingUnits().find((unit) => unit.team === "red").hp'), redHpBefore - 5);
+  assert.equal(dom.window.eval("currentUnit().hp"), miwaHpBefore - 16);
+  assert.equal(dom.window.eval('livingUnits().find((unit) => unit.team === "red").hp'), redHpBefore - 7);
   assert.equal(dom.window.eval("currentUnit().ce"), 30);
 
   dom.window.close();
@@ -267,7 +279,7 @@ test("Miwa simple domain hits an enemy ending turn in the surrounding zone", asy
     stopInitiativeClock();
   `);
 
-  assert.equal(dom.window.eval('livingUnits().find((unit) => unit.team === "red").hp'), redHpBefore - 5);
+  assert.equal(dom.window.eval('livingUnits().find((unit) => unit.team === "red").hp'), redHpBefore - 7);
 
   dom.window.close();
 });
@@ -297,8 +309,8 @@ test("Yuji has tuned stats, gains Focus, can Black Flash, and loses Focus withou
     };
   })())`)), {
     maxHp: 55,
-    attack: 20,
-    defense: 7,
+    attack: 23,
+    defense: 6,
     speed: 18,
     mobility: 3,
     maxCe: 100,
@@ -321,7 +333,7 @@ test("Yuji has tuned stats, gains Focus, can Black Flash, and loses Focus withou
   `);
 
   assert.equal(dom.window.eval("currentUnit().focus"), 1);
-  assert.equal(dom.window.eval('livingUnits().find((unit) => unit.team === "red").hp'), 32);
+  assert.equal(dom.window.eval('livingUnits().find((unit) => unit.team === "red").hp'), 18);
   assert.match(document.querySelector("#log").textContent, /Black Flash/);
 
   dom.window.eval(`
@@ -332,6 +344,158 @@ test("Yuji has tuned stats, gains Focus, can Black Flash, and loses Focus withou
     stopInitiativeClock();
   `);
   assert.equal(dom.window.eval('livingUnits().find((unit) => unit.characterId === "yuji").focus'), 3);
+
+  dom.window.close();
+});
+
+test("Choso starts in Blood Mode, attacks at range, applies Poison, and poison ticks on turn start", async () => {
+  const dom = await loadGame();
+  const { document } = dom.window;
+
+  clickButton(document, "Iniciar juego");
+  clickRosterCard(document, "Choso");
+  clickButton(document, "Equipo rojo");
+  clickRosterCard(document, "Miwa");
+  clickButton(document, "Elegir mapa");
+  clickButton(document, "Empezar batalla");
+  dom.window.eval('stopInitiativeClock(); selectNextTurn([livingUnits().find((unit) => unit.characterId === "choso")]);');
+
+  assert.deepEqual(JSON.parse(dom.window.eval(`JSON.stringify((() => {
+    const choso = currentUnit();
+    return {
+      maxHp: choso.maxHp,
+      attack: choso.attack,
+      defense: choso.defense,
+      effectiveDefense: effectiveDefense(choso),
+      speed: choso.speed,
+      maxCe: choso.maxCe,
+      stance: choso.stance,
+      passive: getPassive(choso).id,
+    };
+  })())`)), {
+    maxHp: 58,
+    attack: 21,
+    defense: 4,
+    effectiveDefense: 3,
+    speed: 16,
+    maxCe: 100,
+    stance: "blood",
+    passive: "poisonedBlood",
+  });
+  assert.match(document.querySelector("#unitCard").textContent, /Modo sangre/);
+
+  dom.window.eval(`
+    const choso = currentUnit();
+    const target = livingUnits().find((unit) => unit.team === "red");
+    target.x = choso.x + 3;
+    target.y = choso.y;
+    target.z = choso.z;
+    calculateRanges();
+    useOffense(target);
+    selectNextTurn([target]);
+  `);
+
+  assert.equal(dom.window.eval('livingUnits().find((unit) => unit.team === "red").poisonStacks'), 1);
+  assert.equal(dom.window.eval('livingUnits().find((unit) => unit.team === "red").hp'), 25);
+  assert.match(document.querySelector("#log").textContent, /Veneno/);
+
+  dom.window.close();
+});
+
+test("Choso can switch to Combat Mode for melee damage and defense", async () => {
+  const dom = await loadGame();
+  const { document } = dom.window;
+
+  clickButton(document, "Iniciar juego");
+  clickRosterCard(document, "Choso");
+  clickButton(document, "Equipo rojo");
+  clickRosterCard(document, "Miwa");
+  clickButton(document, "Elegir mapa");
+  clickButton(document, "Empezar batalla");
+  dom.window.eval('stopInitiativeClock(); selectNextTurn([livingUnits().find((unit) => unit.characterId === "choso")]);');
+
+  dom.window.eval('useSelfAbility(getAbility(currentUnit(), "switchChosoStance"))');
+
+  assert.equal(dom.window.eval("currentUnit().stance"), "combat");
+  assert.equal(dom.window.eval("currentUnit().acted"), true);
+  assert.equal(dom.window.eval("effectiveDefense(currentUnit())"), 5);
+  assert.deepEqual(JSON.parse(dom.window.eval("JSON.stringify(getAbilities(currentUnit()).map((ability) => ability.id))")), ["switchChosoStance"]);
+
+  dom.window.eval(`
+    const choso = currentUnit();
+    const target = livingUnits().find((unit) => unit.team === "red");
+    choso.acted = false;
+    choso.moved = false;
+    target.x = choso.x + 1;
+    target.y = choso.y;
+    target.z = choso.z;
+    calculateRanges();
+    useOffense(target);
+  `);
+
+  assert.equal(dom.window.eval('livingUnits().find((unit) => unit.team === "red").hp'), 22);
+  assert.equal(dom.window.eval('livingUnits().find((unit) => unit.team === "red").poisonStacks'), 0);
+
+  dom.window.close();
+});
+
+test("Choso uses Piercing Blood through a line and Supernova in an area", async () => {
+  const dom = await loadGame();
+  const { document } = dom.window;
+
+  clickButton(document, "Iniciar juego");
+  clickRosterCard(document, "Choso");
+  clickButton(document, "Equipo rojo");
+  clickRosterCard(document, "Miwa");
+  clickRosterCard(document, "Choso");
+  clickButton(document, "Elegir mapa");
+  clickButton(document, "Empezar batalla");
+  dom.window.eval('stopInitiativeClock(); selectNextTurn([livingUnits().find((unit) => unit.team === "blue" && unit.characterId === "choso")]);');
+
+  dom.window.eval(`
+    const choso = currentUnit();
+    const targets = livingUnits().filter((unit) => unit.team === "red");
+    targets[0].x = choso.x + 2;
+    targets[0].y = choso.y;
+    targets[0].z = choso.z;
+    targets[1].x = choso.x + 4;
+    targets[1].y = choso.y;
+    targets[1].z = choso.z;
+    calculateRanges();
+  `);
+  document.querySelector("#skillBtn").click();
+  clickAbility(document, "Sangre perforante");
+  dom.window.eval(`
+    const target = livingUnits().find((unit) => unit.team === "red" && unit.characterId === "miwa");
+    useOffense(target);
+  `);
+
+  assert.equal(dom.window.eval('livingUnits().find((unit) => unit.team === "blue" && unit.characterId === "choso").ce'), 75);
+  assert.equal(dom.window.eval('abilityCooldown(livingUnits().find((unit) => unit.team === "blue" && unit.characterId === "choso"), "piercingBlood")'), 3);
+  assert.equal(dom.window.eval('livingUnits().find((unit) => unit.team === "red" && unit.characterId === "miwa").poisonStacks'), 1);
+  assert.equal(dom.window.eval('livingUnits().find((unit) => unit.team === "red" && unit.characterId === "choso").poisonStacks'), 1);
+
+  dom.window.eval(`
+    const choso = livingUnits().find((unit) => unit.team === "blue" && unit.characterId === "choso");
+    const target = livingUnits().find((unit) => unit.team === "red" && unit.characterId === "miwa");
+    choso.acted = false;
+    choso.moved = false;
+    choso.ce = 100;
+    choso.abilityCooldowns = {};
+    selectNextTurn([choso]);
+    calculateRanges();
+  `);
+  document.querySelector("#skillBtn").click();
+  clickAbility(document, "Supernova");
+  dom.window.eval(`
+    const target = livingUnits().find((unit) => unit.team === "red" && unit.characterId === "miwa");
+    useAreaAttackAbility(target.x, target.y, target.z);
+  `);
+
+  assert.equal(dom.window.eval('livingUnits().find((unit) => unit.team === "blue" && unit.characterId === "choso").ce'), 65);
+  assert.equal(dom.window.eval('abilityCooldown(livingUnits().find((unit) => unit.team === "blue" && unit.characterId === "choso"), "supernova")'), 5);
+  assert.equal(dom.window.eval('livingUnits().find((unit) => unit.team === "red" && unit.characterId === "miwa").poisonStacks'), 2);
+  assert.match(document.querySelector("#log").textContent, /Supernova/);
 
   dom.window.close();
 });
@@ -356,11 +520,11 @@ test("attack, defense, and speed scale linearly from CE", async () => {
       speed: effectiveSpeed(yuji),
     };
   })())`)), {
-    attack: 15,
-    defense: 5,
+    attack: 17,
+    defense: 4,
     speed: 13,
   });
-  assert.match(document.querySelector("#unitCard").textContent, /Ataque15/);
+  assert.match(document.querySelector("#unitCard").textContent, /Ataque17/);
   assert.match(document.querySelector("#unitCard").textContent, /Velocidad13/);
 
   dom.window.close();
@@ -439,7 +603,7 @@ test("dead Yuji transforms into Sukuna on the second eligible turn with finger m
   `);
 
   assert.equal(dom.window.eval('livingUnits().find((unit) => unit.characterId === "yuji").hp'), 22);
-  assert.equal(dom.window.eval('livingUnits().find((unit) => unit.characterId === "choso").hp'), 71);
+  assert.equal(dom.window.eval('livingUnits().find((unit) => unit.characterId === "choso").hp'), 65);
   assert.match(document.querySelector("#log").textContent, /Sukuna/);
 
   dom.window.close();

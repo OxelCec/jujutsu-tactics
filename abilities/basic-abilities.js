@@ -13,6 +13,11 @@ window.GameData.passives = {
     blackFlashChancePerFocus: 0.05,
     blackFlashDamageMultiplier: 2,
   },
+  poisonedBlood: {
+    id: "poisonedBlood",
+    name: "Sangre venenosa",
+    damagePerPoisonStack: 0.15,
+  },
 };
 
 window.GameData.abilities = {
@@ -49,5 +54,40 @@ window.GameData.abilities = {
     effect: "counterattack",
     defenseMultiplier: 1.3,
     description: "Defensa x1.3 y contraataque si sobrevive a un ataque",
+  },
+  switchChosoStance: {
+    id: "switchChosoStance",
+    name: "Cambiar postura",
+    type: "self",
+    ceCost: 0,
+    effect: "switchChosoStance",
+    description: "Alterna entre Modo sangre y Modo combate",
+  },
+  piercingBlood: {
+    id: "piercingBlood",
+    name: "Sangre perforante",
+    type: "attack",
+    requiredStance: "blood",
+    ceCost: 25,
+    cooldownTurns: 2,
+    attackMultiplier: 1.25,
+    defenseMultiplier: 0.5,
+    range: 6,
+    pattern: "line",
+    appliesPoison: true,
+    description: "Rayo recto de largo alcance que atraviesa unidades y aplica Veneno",
+  },
+  supernova: {
+    id: "supernova",
+    name: "Supernova",
+    type: "areaAttack",
+    requiredStance: "blood",
+    ceCost: 35,
+    cooldownTurns: 4,
+    attackMultiplier: 1.1,
+    range: 4,
+    radius: 1,
+    appliesPoison: true,
+    description: "Explosion de sangre en area que aplica Veneno",
   },
 };
