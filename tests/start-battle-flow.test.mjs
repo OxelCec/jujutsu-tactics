@@ -493,9 +493,63 @@ test("Choso uses Piercing Blood through a line and Supernova in an area", async 
   `);
 
   assert.equal(dom.window.eval('livingUnits().find((unit) => unit.team === "blue" && unit.characterId === "choso").ce'), 65);
+  assert.equal(dom.window.eval('abilityCooldown(livingUnits().find((unit) => unit.team === "blue" && unit.characterId === "choso"), "supernova")'), 0);
+  assert.equal(dom.window.eval("activeSupernovaForUnit(currentUnit()).remainingTurns"), 3);
+  assert.equal(document.querySelectorAll(".supernova-orb").length, 1);
+  assert.equal(dom.window.eval('livingUnits().find((unit) => unit.team === "red" && unit.characterId === "miwa").poisonStacks'), 1);
+
+  dom.window.eval("currentUnit().acted = true; currentUnit().moved = true; render();");
+  document.querySelector("#skillBtn").click();
+  clickAbility(document, "Activar Supernova");
+
+  assert.equal(dom.window.eval('livingUnits().find((unit) => unit.team === "blue" && unit.characterId === "choso").ce'), 65);
   assert.equal(dom.window.eval('abilityCooldown(livingUnits().find((unit) => unit.team === "blue" && unit.characterId === "choso"), "supernova")'), 5);
   assert.equal(dom.window.eval('livingUnits().find((unit) => unit.team === "red" && unit.characterId === "miwa").poisonStacks'), 2);
+  assert.equal(dom.window.eval("currentUnit().acted"), true);
+  assert.equal(dom.window.eval("currentUnit().moved"), true);
+  assert.equal(dom.window.eval("activeSupernovaForUnit(currentUnit())"), undefined);
+  assert.equal(document.querySelectorAll(".supernova-orb").length, 0);
   assert.match(document.querySelector("#log").textContent, /Supernova/);
+
+  dom.window.close();
+});
+
+test("Choso Supernova expires after three own turns and then starts cooldown", async () => {
+  const dom = await loadGame();
+  const { document } = dom.window;
+
+  clickButton(document, "Iniciar juego");
+  clickRosterCard(document, "Choso");
+  clickButton(document, "Equipo rojo");
+  clickRosterCard(document, "Miwa");
+  clickButton(document, "Elegir mapa");
+  clickButton(document, "Empezar batalla");
+  dom.window.eval('stopInitiativeClock(); selectNextTurn([livingUnits().find((unit) => unit.characterId === "choso")]);');
+
+  document.querySelector("#skillBtn").click();
+  clickAbility(document, "Supernova");
+  dom.window.eval(`
+    const choso = currentUnit();
+    useAreaAttackAbility(choso.x + 2, choso.y, choso.z);
+    advanceToNextTurn();
+    stopInitiativeClock();
+  `);
+
+  assert.equal(document.querySelectorAll(".supernova-orb").length, 1);
+
+  dom.window.eval(`
+    const choso = livingUnits().find((unit) => unit.characterId === "choso");
+    for (let index = 0; index < 3; index += 1) {
+      selectNextTurn([choso]);
+      advanceToNextTurn();
+      stopInitiativeClock();
+    }
+  `);
+
+  assert.equal(dom.window.eval('activeSupernovaForUnit(livingUnits().find((unit) => unit.characterId === "choso"))'), undefined);
+  assert.equal(dom.window.eval('abilityCooldown(livingUnits().find((unit) => unit.characterId === "choso"), "supernova")'), 5);
+  assert.equal(document.querySelectorAll(".supernova-orb").length, 0);
+  assert.match(document.querySelector("#log").textContent, /desaparece/);
 
   dom.window.close();
 });

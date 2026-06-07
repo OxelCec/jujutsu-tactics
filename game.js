@@ -19,6 +19,7 @@ const CHOSO_BLOOD_DEFENSE_MULTIPLIER = 0.85;
 const CHOSO_COMBAT_DEFENSE_MULTIPLIER = 1.3;
 const POISON_MAX_STACKS = 3;
 const POISON_DAMAGE_PER_STACK = 4;
+const SUPERNOVA_DURATION_TURNS = 3;
 let initiativeFrameId = null;
 let lastInitiativeAt = 0;
 
@@ -37,6 +38,7 @@ const state = {
   abilityTargets: new Set(),
   visualEvents: [],
   fingers: [],
+  supernovas: [],
   yujiFingerState: {},
   round: 1,
   turnCount: 0,
@@ -150,6 +152,7 @@ function initBattle() {
   state.abilityTargets.clear();
   state.visualEvents = [];
   state.fingers = spawnSukunaFingers();
+  state.supernovas = [];
   state.yujiFingerState = Object.fromEntries(
     state.units
       .filter((unit) => unit.characterId === "yuji")
@@ -348,6 +351,14 @@ function fingerPileAt(x, y, z) {
   return state.fingers.find((pile) => pile.x === x && pile.y === y && pile.z === z);
 }
 
+function supernovaAt(x, y, z) {
+  return state.supernovas.find((orb) => orb.x === x && orb.y === y && orb.z === z);
+}
+
+function activeSupernovaForUnit(unit) {
+  return unit ? state.supernovas.find((orb) => orb.ownerId === unit.id) : null;
+}
+
 function addFingerPile(x, y, z, count) {
   if (count <= 0) return;
   const existing = fingerPileAt(x, y, z);
@@ -427,7 +438,7 @@ function getAbility(unit, abilityId = "strike") {
 function getAbilities(unit) {
   return unit.abilityIds
     .map((abilityId) => data.abilities[abilityId])
-    .filter((ability) => ability && isAbilityAvailableInStance(unit, ability));
+    .filter((ability) => ability && (isAbilityAvailableInStance(unit, ability) || (ability.id === "supernova" && activeSupernovaForUnit(unit))));
 }
 
 function getPassive(unit) {
@@ -604,6 +615,7 @@ function selectedAbility() {
 
 function abilityDescription(ability) {
   const cooldown = ability.cooldownTurns ? `, CD ${ability.cooldownTurns}` : "";
+  if (ability.id === "supernova") return `Coloca un orbe ${SUPERNOVA_DURATION_TURNS} turnos; activacion gratis, ${ability.ceCost} CE${cooldown}`;
   if (ability.description) return `${ability.description}, ${ability.ceCost} CE${cooldown}`;
   if (ability.type === "self") return `Personal, ${ability.ceCost} CE${cooldown}`;
   if (ability.type === "areaAttack") return `Area ${ability.radius}, x${ability.attackMultiplier}, ${ability.ceCost} CE${cooldown}`;
@@ -717,6 +729,7 @@ function advanceToNextTurn() {
     pickupFingersAtUnit(endingUnit);
     processFocusEndOfTurn(endingUnit);
     processEndOfTurnReactions(endingUnit);
+    tickSupernovaDuration(endingUnit);
   }
 
   if (checkVictory()) {
@@ -764,7 +777,7 @@ function calculateRanges() {
   }
 
   const ability = selectedAbility();
-  if (!ability || unit.acted || unit.ce < ability.ceCost || abilityCooldown(unit, ability.id) > 0) return;
+  if (!ability || unit.acted || unit.ce < ability.ceCost || abilityCooldown(unit, ability.id) > 0 || (ability.id === "supernova" && activeSupernovaForUnit(unit))) return;
   if (ability.type === "self") {
     state.abilityTargets.add(key(unit.x, unit.y, unit.z));
     return;
@@ -893,6 +906,7 @@ function renderTile(x, y, z) {
   const tileKey = key(x, y, z);
   const occupant = unitAt(x, y, z);
   const fingerPile = fingerPileAt(x, y, z);
+  const supernova = supernovaAt(x, y, z);
   const ability = selectedAbility();
   tile.type = "button";
   tile.className = "tile";
@@ -900,6 +914,7 @@ function renderTile(x, y, z) {
 
   if (stairAt(x, y, z)) tile.classList.add("stairs");
   if (fingerPile) tile.classList.add("finger-tile");
+  if (supernova) tile.classList.add("supernova-tile");
   if (state.reachable.has(tileKey)) tile.classList.add("move");
   if (state.abilityTargets.has(tileKey)) tile.classList.add(ability?.type === "attack" ? "skill-attack" : "skill-support");
   if (occupant && state.attackable.has(occupant.id)) tile.classList.add("attack");
@@ -923,6 +938,14 @@ function renderTile(x, y, z) {
     finger.textContent = fingerPile.count > 1 ? String(fingerPile.count) : "";
     finger.title = `${fingerPile.count} dedo${fingerPile.count === 1 ? "" : "s"} de Sukuna`;
     tile.append(finger);
+  }
+
+  if (supernova) {
+    const orb = document.createElement("span");
+    orb.className = `supernova-orb ${supernova.team}-orb`;
+    orb.textContent = supernova.remainingTurns;
+    orb.title = `Supernova: ${supernova.remainingTurns} turno${supernova.remainingTurns === 1 ? "" : "s"}`;
+    tile.append(orb);
   }
 
   tile.addEventListener("click", () => handleTileClick(x, y, z));
@@ -1040,7 +1063,8 @@ function renderPanel() {
   attackBtn.disabled = state.gameOver || unitDefeated || unit.acted || !state.attackable.size;
   attackBtn.classList.toggle("active", state.selectedAction === "attack");
   const turnAbilities = getAbilities(unit);
-  skillBtn.disabled = state.gameOver || unitDefeated || unit.acted || !turnAbilities.length;
+  const hasFreeSupernova = Boolean(activeSupernovaForUnit(unit));
+  skillBtn.disabled = state.gameOver || unitDefeated || (unit.acted && !hasFreeSupernova) || !turnAbilities.length;
   skillBtn.classList.toggle("active", state.abilityMenuOpen);
   specialBtn.classList.toggle("hidden", !hasYujiInBattle());
   specialBtn.textContent = canTransferFingers(unit) ? "Dar dedos" : "Especial";
@@ -1075,9 +1099,18 @@ function renderAbilityMenu(unit, abilities) {
     button.type = "button";
     button.className = state.selectedAbilityId === ability.id ? "active" : "";
     const cooldown = abilityCooldown(unit, ability.id);
-    button.disabled = state.gameOver || unit.acted || unit.ce < ability.ceCost || cooldown > 0;
-    button.innerHTML = `<strong>${ability.name}</strong><span>${cooldown > 0 ? `CD ${cooldown} turno${cooldown === 1 ? "" : "s"}` : abilityDescription(ability)}</span>`;
+    const activeSupernova = ability.id === "supernova" ? activeSupernovaForUnit(unit) : null;
+    button.disabled = activeSupernova
+      ? state.gameOver || unit.hp <= 0
+      : state.gameOver || unit.acted || unit.ce < ability.ceCost || cooldown > 0;
+    button.innerHTML = activeSupernova
+      ? `<strong>Activar Supernova</strong><span>Gratis, ${activeSupernova.remainingTurns} turno${activeSupernova.remainingTurns === 1 ? "" : "s"}</span>`
+      : `<strong>${ability.name}</strong><span>${cooldown > 0 ? `CD ${cooldown} turno${cooldown === 1 ? "" : "s"}` : abilityDescription(ability)}</span>`;
     button.addEventListener("click", () => {
+      if (activeSupernova) {
+        activateSupernova(unit);
+        return;
+      }
       if (ability.type === "self") {
         useSelfAbility(ability);
         return;
@@ -1110,6 +1143,7 @@ function renderTileInfo() {
   const occupant = unitAt(x, y, z);
   const stair = stairAt(x, y, z);
   const fingerPile = fingerPileAt(x, y, z);
+  const supernova = supernovaAt(x, y, z);
   const tileKind = stair ? "Escalera" : "Suelo";
   const tileState = [
     state.reachable.has(key(x, y, z)) ? "Movimiento posible" : "",
@@ -1123,6 +1157,10 @@ function renderTileInfo() {
   const meta = document.createElement("p");
   const tileDetails = [...tileState];
   if (fingerPile) tileDetails.push(`${fingerPile.count} dedo${fingerPile.count === 1 ? "" : "s"} de Sukuna`);
+  if (supernova) {
+    const owner = state.units.find((unit) => unit.id === supernova.ownerId);
+    tileDetails.push(`Supernova de ${owner?.name ?? "Choso"} (${supernova.remainingTurns})`);
+  }
   meta.textContent = tileDetails.length ? tileDetails.join(" - ") : "Sin marcador activo";
   tileInfoEl.append(meta);
 
@@ -1264,6 +1302,18 @@ function processFocusEndOfTurn(unit) {
   addLog(`${unit.name} pierde ${before - unit.focus} Focus por no atacar.`);
 }
 
+function tickSupernovaDuration(unit) {
+  const orb = activeSupernovaForUnit(unit);
+  if (!orb || orb.createdTurnCount === state.turnCount) return;
+
+  orb.remainingTurns -= 1;
+  if (orb.remainingTurns > 0) return;
+
+  state.supernovas = state.supernovas.filter((entry) => entry.id !== orb.id);
+  setAbilityCooldown(unit, data.abilities.supernova);
+  addLog(`Supernova de ${unit.name} desaparece.`);
+}
+
 function transformYujiIntoSukuna(yuji) {
   const fingerState = yujiFingerState(yuji);
   if (!fingerState || fingerState.transformed) return;
@@ -1331,6 +1381,7 @@ function handleUnitDefeated(unit) {
   if (unit.defeated) return;
   unit.defeated = true;
   unit.activeEffects = {};
+  state.supernovas = state.supernovas.filter((orb) => orb.ownerId !== unit.id);
   dropFingersFromUnit(unit);
   addLog(`${unit.name} queda fuera.`);
 }
@@ -1443,6 +1494,11 @@ function useAreaAttackAbility(x, y, z) {
   const ability = selectedAbility();
   if (!unit || unit.hp <= 0 || !ability || ability.type !== "areaAttack" || unit.acted || unit.ce < ability.ceCost || abilityCooldown(unit, ability.id) > 0) return;
 
+  if (ability.id === "supernova") {
+    placeSupernova(unit, ability, x, y, z);
+    return;
+  }
+
   const targets = livingUnits().filter((target) =>
     target.team !== unit.team
     && target.z === z
@@ -1462,6 +1518,68 @@ function useAreaAttackAbility(x, y, z) {
   }
   unit.acted = true;
   unit.moved = true;
+  state.selectedAbilityId = null;
+  state.abilityMenuOpen = false;
+  state.pendingTransfer = null;
+
+  if (checkVictory()) {
+    render();
+    return;
+  }
+
+  calculateRanges();
+  render();
+}
+
+function placeSupernova(unit, ability, x, y, z) {
+  if (activeSupernovaForUnit(unit)) return;
+  unit.ce -= ability.ceCost;
+  state.supernovas.push({
+    id: `supernova-${unit.id}-${Date.now()}-${state.supernovas.length}`,
+    ownerId: unit.id,
+    team: unit.team,
+    x,
+    y,
+    z,
+    remainingTurns: SUPERNOVA_DURATION_TURNS,
+    createdTurnCount: state.turnCount,
+  });
+  unit.acted = true;
+  unit.moved = true;
+  state.selectedAbilityId = null;
+  state.abilityMenuOpen = false;
+  state.pendingTransfer = null;
+  addLog(`${unit.name} coloca Supernova en ${x + 1},${y + 1}, nivel ${z + 1}.`);
+  calculateRanges();
+  render();
+}
+
+function detonateSupernova(unit, orb, ability, reason = "activa") {
+  const targets = livingUnits().filter((target) =>
+    target.team !== unit.team
+    && target.z === orb.z
+    && Math.max(Math.abs(target.x - orb.x), Math.abs(target.y - orb.y)) <= ability.radius,
+  );
+
+  state.supernovas = state.supernovas.filter((entry) => entry.id !== orb.id);
+  setAbilityCooldown(unit, ability);
+  addLog(`${unit.name} ${reason} Supernova.`);
+  for (const target of targets) {
+    performAttack(unit, target, ability.name, {
+      attackMultiplier: ability.attackMultiplier,
+      appliesPoison: ability.appliesPoison,
+      triggersCounterattack: false,
+      canBlackFlash: false,
+    });
+  }
+}
+
+function activateSupernova(unit) {
+  const orb = activeSupernovaForUnit(unit);
+  const ability = data.abilities.supernova;
+  if (!unit || unit.hp <= 0 || !orb || !ability) return;
+
+  detonateSupernova(unit, orb, ability);
   state.selectedAbilityId = null;
   state.abilityMenuOpen = false;
   state.pendingTransfer = null;

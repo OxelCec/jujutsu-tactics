@@ -88,6 +88,6 @@ window.GameData.abilities = {
     range: 4,
     radius: 1,
     appliesPoison: true,
-    description: "Explosion de sangre en area que aplica Veneno",
+    description: "Coloca un orbe que Choso puede detonar gratis durante sus proximos turnos",
   },
 };

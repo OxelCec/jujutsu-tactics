@@ -736,6 +736,39 @@ button.primary {
   pointer-events: none;
 }
 
+.supernova-orb {
+  position: absolute;
+  left: 50%;
+  top: 48%;
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  border: 2px solid rgba(240, 239, 229, 0.72);
+  border-radius: 999px;
+  background:
+    radial-gradient(circle at 35% 35%, rgba(255, 255, 255, 0.95), rgba(202, 42, 66, 0.9) 38%, rgba(80, 8, 20, 0.92) 72%);
+  color: #f0efe5;
+  font-size: 10px;
+  font-weight: 900;
+  z-index: 7;
+  box-shadow:
+    0 0 0 2px rgba(20, 21, 16, 0.38),
+    0 0 12px rgba(202, 42, 66, 0.86);
+  transform:
+    translate(-50%, -50%)
+    translateZ(20px)
+    rotateZ(38deg)
+    rotateX(-52deg);
+  pointer-events: none;
+}
+
+.supernova-orb.blue-orb {
+  box-shadow:
+    0 0 0 2px rgba(20, 21, 16, 0.38),
+    0 0 12px rgba(85, 166, 217, 0.86);
+}
+
 .unit-card {
   min-height: 158px;
   border-radius: 0;
