@@ -36,6 +36,13 @@ const chosoStats = {
   defense: "poco",
 };
 
+const tojiStats = {
+  maxHp: "normal",
+  speed: "mucho",
+  attack: "mucho",
+  defense: "normal",
+};
+
 window.GameData.characters = [
   {
     id: "megumi",
@@ -51,9 +58,18 @@ window.GameData.characters = [
     name: "Toji",
     cost: 4,
     model: { shape: "triangle" },
-    statProfile: normalStats(),
-    stats: window.GameData.statsFromProfile(4, normalStats()),
-    abilityIds: ["strike", "guard"],
+    statProfile: tojiStats,
+    stats: window.GameData.statsFromProfile(4, tojiStats, { maxCe: 0 }),
+    abilityIds: [
+      "equipInvertedSpear",
+      "equipSplitSoulKatana",
+      "equipChainWeapon",
+      "spearThrust",
+      "deepCut",
+      "sweepingStrike",
+      "phantomStep",
+    ],
+    defaultWeapon: "invertedSpear",
   },
   {
     id: "mahito",

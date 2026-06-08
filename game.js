@@ -21,6 +21,14 @@ const POISON_MAX_STACKS = 3;
 const POISON_DAMAGE_PER_STACK = 4;
 const POISON_DURATION_TURNS = 2;
 const SUPERNOVA_DURATION_TURNS = 3;
+const BLEEDING_DAMAGE = 5;
+const BLEEDING_DURATION_TURNS = 3;
+const TOJI_WEAPON_LOCK_TURNS = 3;
+const TOJI_WEAPON_ATTACK_MULTIPLIERS = {
+  invertedSpear: 0.85,
+  splitSoulKatana: 1.25,
+  chainWeapon: 1.08,
+};
 const BOARD_MIN_ZOOM = 0.55;
 const BOARD_MAX_ZOOM = 1.85;
 let initiativeFrameId = null;
@@ -137,8 +145,11 @@ function createBattleUnit(character, team, index) {
     ce: stats.maxCe,
     focus: character.passiveId === "focus" ? 0 : null,
     stance: character.defaultStance ?? null,
+    weapon: character.defaultWeapon ?? null,
+    weaponLocks: {},
     poisonStacks: 0,
     poisonTurnsRemaining: 0,
+    bleedingTurnsRemaining: 0,
     sukunaFingers: 0,
     attackedThisTurn: false,
     abilityCooldowns: {},
@@ -514,6 +525,21 @@ function isAdjacent4To(x, y, targetX, targetY) {
   return Math.abs(x - targetX) + Math.abs(y - targetY) === 1;
 }
 
+function facingFromDelta(dx, dy, fallback = "south") {
+  if (Math.abs(dx) > Math.abs(dy)) return dx > 0 ? "east" : "west";
+  if (dy) return dy > 0 ? "south" : "north";
+  return fallback;
+}
+
+function directionVector(facing) {
+  return {
+    north: { dx: 0, dy: -1 },
+    south: { dx: 0, dy: 1 },
+    east: { dx: 1, dy: 0 },
+    west: { dx: -1, dy: 0 },
+  }[facing] ?? { dx: 0, dy: 1 };
+}
+
 function canOccupyTile(unit, x, y, z) {
   if (x < 0 || x >= SIZE || y < 0 || y >= SIZE || z < 0 || z >= LEVELS) return false;
   const occupant = unitAt(x, y, z);
@@ -521,6 +547,10 @@ function canOccupyTile(unit, x, y, z) {
   if (solidTerrainAt(x, y, z)) return false;
   if (holeAt(x, y, z) && !isFlying(unit)) return false;
   return true;
+}
+
+function setFacingToward(unit, x, y) {
+  unit.facing = facingFromDelta(x - unit.x, y - unit.y, unit.facing);
 }
 
 function addHole(x, y, z) {
@@ -609,6 +639,10 @@ function removeFingerPile(pile) {
   state.fingers = state.fingers.filter((entry) => entry.id !== pile.id);
 }
 
+function clearFingerPiles() {
+  state.fingers = [];
+}
+
 function spawnSukunaFingers() {
   if (!hasYujiInBattle()) return [];
 
@@ -678,7 +712,7 @@ function getAbility(unit, abilityId = "strike") {
 function getAbilities(unit) {
   return unit.abilityIds
     .map((abilityId) => data.abilities[abilityId])
-    .filter((ability) => ability && (isAbilityAvailableInStance(unit, ability) || (ability.id === "supernova" && activeSupernovaForUnit(unit))));
+    .filter((ability) => ability && (isAbilityAvailableForUnit(unit, ability) || (ability.id === "supernova" && activeSupernovaForUnit(unit))));
 }
 
 function getPassive(unit) {
@@ -687,6 +721,37 @@ function getPassive(unit) {
 
 function isAbilityAvailableInStance(unit, ability) {
   return !ability.requiredStance || unit.stance === ability.requiredStance;
+}
+
+function isToji(unit) {
+  return unit?.characterId === "toji";
+}
+
+function weaponName(weaponId) {
+  return {
+    invertedSpear: "Lanza invertida",
+    splitSoulKatana: "Katana alma dividida",
+    chainWeapon: "Cadena",
+  }[weaponId] ?? weaponId;
+}
+
+function ceLabel(unit) {
+  return unit.maxCe ? `${unit.ce}/${unit.maxCe}` : "Sin CE";
+}
+
+function weaponLock(unit, weaponId) {
+  return unit?.weaponLocks?.[weaponId] ?? 0;
+}
+
+function isAbilityAvailableForUnit(unit, ability) {
+  if (!isAbilityAvailableInStance(unit, ability)) return false;
+  if (ability.requiredWeapon && unit.weapon !== ability.requiredWeapon) return false;
+  return true;
+}
+
+function tojiWeaponAttackMultiplier(unit) {
+  if (!isToji(unit)) return 1;
+  return TOJI_WEAPON_ATTACK_MULTIPLIERS[unit.weapon] ?? 1;
 }
 
 function isChoso(unit) {
@@ -771,15 +836,15 @@ function ceStatScale(unit) {
 }
 
 function effectiveAttack(unit) {
-  return Math.max(1, Math.floor(unit.attack * ceStatScale(unit)));
+  return Math.max(1, Math.floor(unit.attack * ceStatScale(unit) * tojiWeaponAttackMultiplier(unit)));
 }
 
 function effectiveSpeed(unit) {
   return Math.max(1, Math.floor(unit.speed * ceStatScale(unit)));
 }
 
-function effectiveDefense(unit) {
-  const multiplier = unit.activeEffects.defenseMultiplier ?? 1;
+function effectiveDefense(unit, options = {}) {
+  const multiplier = options.ignoreActiveEffects ? 1 : unit.activeEffects.defenseMultiplier ?? 1;
   return Math.max(1, Math.floor(unit.defense * ceStatScale(unit) * multiplier * stanceDefenseMultiplier(unit)));
 }
 
@@ -798,6 +863,11 @@ function tickAbilityCooldowns(unit) {
     const next = Math.max(0, remaining - 1);
     if (next) unit.abilityCooldowns[abilityId] = next;
     else delete unit.abilityCooldowns[abilityId];
+  }
+  for (const [weaponId, remaining] of Object.entries(unit.weaponLocks ?? {})) {
+    const next = Math.max(0, remaining - 1);
+    if (next) unit.weaponLocks[weaponId] = next;
+    else delete unit.weaponLocks[weaponId];
   }
 }
 
@@ -826,10 +896,33 @@ function applyPoison(target, amount = 1) {
   addLog(`Veneno de ${target.name} se mantiene (${target.poisonTurnsRemaining} turnos).`);
 }
 
+function applyBleeding(target) {
+  if (target.hp <= 0) return;
+  target.bleedingTurnsRemaining = BLEEDING_DURATION_TURNS;
+  addLog(`${target.name} recibe Sangrado (${BLEEDING_DURATION_TURNS} turnos).`);
+}
+
 function poisonDamageMultiplier(attacker, target) {
   const passive = getPassive(attacker);
   if (passive?.id !== "poisonedBlood") return 1;
   return 1 + (target.poisonStacks ?? 0) * passive.damagePerPoisonStack;
+}
+
+function processBleedingStartOfTurn(unit) {
+  if (unit.hp <= 0 || !unit.bleedingTurnsRemaining) return false;
+  unit.hp = Math.max(0, unit.hp - BLEEDING_DAMAGE);
+  unit.bleedingTurnsRemaining = Math.max(0, unit.bleedingTurnsRemaining - 1);
+  addLog(`${unit.name} sufre ${BLEEDING_DAMAGE} dano por Sangrado.`);
+  if (unit.hp > 0) return false;
+  handleUnitDefeated(unit);
+  if (checkVictory()) {
+    render();
+    return true;
+  }
+  state.currentUnitId = null;
+  render();
+  startInitiativeClock();
+  return true;
 }
 
 function processPoisonStartOfTurn(unit) {
@@ -861,11 +954,14 @@ function selectedAbility() {
   const unit = currentUnit();
   if (!unit || !state.selectedAbilityId) return null;
   const ability = getAbility(unit, state.selectedAbilityId);
-  return ability && isAbilityAvailableInStance(unit, ability) ? ability : null;
+  return ability && isAbilityAvailableForUnit(unit, ability) ? ability : null;
 }
 
 function abilityDescription(ability) {
   const cooldown = ability.cooldownTurns ? `, CD ${ability.cooldownTurns}` : "";
+  if (ability.type === "weaponSwitch") return `${ability.description}${cooldown}`;
+  if (ability.type === "teleport") return `Teletransporte ${ability.range} casillas${cooldown}`;
+  if (ability.type === "sweepAttack") return `${ability.description}${cooldown}`;
   if (ability.id === "supernova") return `Coloca un orbe ${SUPERNOVA_DURATION_TURNS} turnos; activacion gratis, ${ability.ceCost} CE${cooldown}`;
   if (ability.description) return `${ability.description}, ${ability.ceCost} CE${cooldown}`;
   if (ability.type === "self") return `Personal, ${ability.ceCost} CE${cooldown}`;
@@ -933,6 +1029,7 @@ function selectNextTurn(ready) {
   if (handleDeadYujiTurn(next)) return;
   expireTurnEffects(next);
   if (processPoisonStartOfTurn(next)) return;
+  if (processBleedingStartOfTurn(next)) return;
   clearExpiredPoison(next);
   regenerateTurnCe(next);
   tickAbilityCooldowns(next);
@@ -1047,6 +1144,21 @@ function calculateRanges() {
     return;
   }
 
+  if (ability.type === "teleport") {
+    const minZ = Math.max(0, unit.z - (ability.floorDelta ?? 0));
+    const maxZ = Math.min(LEVELS - 1, unit.z + (ability.floorDelta ?? 0));
+    for (let z = minZ; z <= maxZ; z += 1) {
+      for (let y = 0; y < SIZE; y += 1) {
+        for (let x = 0; x < SIZE; x += 1) {
+          if (Math.abs(x - unit.x) + Math.abs(y - unit.y) > ability.range) continue;
+          if (!canOccupyTile(unit, x, y, z)) continue;
+          state.abilityTargets.add(key(x, y, z));
+        }
+      }
+    }
+    return;
+  }
+
   for (let y = 0; y < SIZE; y += 1) {
     for (let x = 0; x < SIZE; x += 1) {
       if (distance2d(unit, x, y) > ability.range) continue;
@@ -1118,8 +1230,8 @@ function renderTeamList() {
       const fingerInfo = hasYujiInBattle()
         ? ` - ${unit.sukunaFingers} dedos${isYuji(unit) ? ` - ${yujiFingerState(unit)?.consumed ?? 0} consumidos` : ""}${totalFingerContributions(unit) ? ` - ${totalFingerContributions(unit)} dados` : ""}`
         : "";
-      const statusInfo = `${unit.stance ? ` - ${stanceLabel(unit)}` : ""}${unit.poisonStacks ? ` - Veneno ${unit.poisonStacks} (${unit.poisonTurnsRemaining})` : ""}`;
-      copy.innerHTML = `<strong>${unit.name}</strong><small>${unit.hp}/${unit.maxHp} vida - ${unit.ce}/${unit.maxCe} CE${statusInfo}${fingerInfo}</small>`;
+      const statusInfo = `${unit.stance ? ` - ${stanceLabel(unit)}` : ""}${unit.weapon ? ` - ${weaponName(unit.weapon)}` : ""}${unit.poisonStacks ? ` - Veneno ${unit.poisonStacks} (${unit.poisonTurnsRemaining})` : ""}${unit.bleedingTurnsRemaining ? ` - Sangrado ${unit.bleedingTurnsRemaining}` : ""}`;
+      copy.innerHTML = `<strong>${unit.name}</strong><small>${unit.hp}/${unit.maxHp} vida - ${ceLabel(unit)}${statusInfo}${fingerInfo}</small>`;
 
       button.append(portrait, copy);
       section.append(button);
@@ -1322,13 +1434,15 @@ function renderPanel() {
       <div class="stat"><strong>Equipo</strong>${displayUnit.team === "blue" ? "Azul" : "Rojo"}</div>
       <div class="stat"><strong>Nivel</strong>${displayUnit.z + 1}</div>
       <div class="stat"><strong>Vida</strong>${displayUnit.hp}/${displayUnit.maxHp}</div>
-      <div class="stat"><strong>CE</strong>${displayUnit.ce}/${displayUnit.maxCe}</div>
+      <div class="stat"><strong>CE</strong>${ceLabel(displayUnit)}</div>
       <div class="stat"><strong>Ataque</strong>${effectiveAttack(displayUnit)}</div>
       <div class="stat"><strong>Defensa</strong>${defenseLabel(displayUnit)}</div>
       <div class="stat"><strong>Movilidad</strong>${displayUnit.mobility}</div>
       <div class="stat"><strong>Velocidad</strong>${effectiveSpeed(displayUnit)}</div>
       ${displayUnit.stance ? `<div class="stat"><strong>Postura</strong>${stanceLabel(displayUnit)}</div>` : ""}
+      ${displayUnit.weapon ? `<div class="stat"><strong>Arma</strong>${weaponName(displayUnit.weapon)}</div>` : ""}
       ${displayUnit.poisonStacks ? `<div class="stat"><strong>Veneno</strong>${displayUnit.poisonStacks}/${POISON_MAX_STACKS} - ${displayUnit.poisonTurnsRemaining}t</div>` : ""}
+      ${displayUnit.bleedingTurnsRemaining ? `<div class="stat"><strong>Sangrado</strong>${displayUnit.bleedingTurnsRemaining}t</div>` : ""}
       ${displayUnit.focus !== null ? `<div class="stat"><strong>Focus</strong>${displayUnit.focus}/5</div>` : ""}
       ${hasYujiInBattle() ? `<div class="stat"><strong>Dedos</strong>${displayUnit.sukunaFingers}</div>` : ""}
       ${hasYujiInBattle() ? `<div class="stat"><strong>Entregados</strong>${totalFingerContributions(displayUnit)}</div>` : ""}
@@ -1337,6 +1451,7 @@ function renderPanel() {
     ${displayUnit.id !== unit?.id && unit ? `<div class="ability-line">Turno actual: ${unit.name}</div>` : ""}
     ${getPassive(displayUnit) ? `<div class="ability-line">Pasiva: ${getPassive(displayUnit).name}</div>` : ""}
     ${displayUnit.stance ? `<div class="ability-line">${displayUnit.stance === "blood" ? "Ataque basico a distancia, aplica Veneno." : "Ataque basico cuerpo a cuerpo mejorado, mas defensa."}</div>` : ""}
+    ${displayUnit.weapon ? `<div class="ability-line">Arma equipada: ${weaponName(displayUnit.weapon)}${Object.entries(displayUnit.weaponLocks ?? {}).length ? ` - Bloqueos: ${Object.entries(displayUnit.weaponLocks).map(([weaponId, turns]) => `${weaponName(weaponId)} ${turns}t`).join(", ")}` : ""}</div>` : ""}
     <div class="ability-line">${abilities.length} habilidad${abilities.length === 1 ? "" : "es"} disponible${abilities.length === 1 ? "" : "s"}</div>
     <div class="ability-list">${abilities.map((ability) => `<div><strong>${ability.name}</strong><span>${abilityDescription(ability)}</span></div>`).join("")}</div>
   `;
@@ -1360,7 +1475,8 @@ function renderPanel() {
   attackBtn.classList.toggle("active", state.selectedAction === "attack");
   const turnAbilities = getAbilities(unit);
   const hasFreeSupernova = Boolean(activeSupernovaForUnit(unit));
-  skillBtn.disabled = state.gameOver || unitDefeated || (unit.acted && !hasFreeSupernova) || !turnAbilities.length;
+  const hasFreeWeaponSwitch = turnAbilities.some((ability) => ability.type === "weaponSwitch" && unit.weapon !== ability.weaponId && weaponLock(unit, ability.weaponId) === 0);
+  skillBtn.disabled = state.gameOver || unitDefeated || (unit.acted && !hasFreeSupernova && !hasFreeWeaponSwitch) || !turnAbilities.length;
   skillBtn.classList.toggle("active", state.abilityMenuOpen);
   specialBtn.classList.toggle("hidden", !hasYujiInBattle());
   specialBtn.textContent = canTransferFingers(unit) ? "Dar dedos" : "Especial";
@@ -1396,15 +1512,26 @@ function renderAbilityMenu(unit, abilities) {
     button.className = state.selectedAbilityId === ability.id ? "active" : "";
     const cooldown = abilityCooldown(unit, ability.id);
     const activeSupernova = ability.id === "supernova" ? activeSupernovaForUnit(unit) : null;
-    button.disabled = activeSupernova
+    const lockedWeaponTurns = ability.type === "weaponSwitch" ? weaponLock(unit, ability.weaponId) : 0;
+    button.disabled = ability.type === "weaponSwitch"
+      ? state.gameOver || unit.hp <= 0 || unit.weapon === ability.weaponId || lockedWeaponTurns > 0
+      : activeSupernova
       ? state.gameOver || unit.hp <= 0
       : state.gameOver || unit.acted || unit.ce < ability.ceCost || cooldown > 0;
     button.innerHTML = activeSupernova
       ? `<strong>Activar Supernova</strong><span>Gratis, ${activeSupernova.remainingTurns} turno${activeSupernova.remainingTurns === 1 ? "" : "s"}</span>`
-      : `<strong>${ability.name}</strong><span>${cooldown > 0 ? `CD ${cooldown} turno${cooldown === 1 ? "" : "s"}` : abilityDescription(ability)}</span>`;
+      : `<strong>${ability.name}</strong><span>${lockedWeaponTurns > 0 ? `Bloq ${lockedWeaponTurns} turno${lockedWeaponTurns === 1 ? "" : "s"}` : cooldown > 0 ? `CD ${cooldown} turno${cooldown === 1 ? "" : "s"}` : abilityDescription(ability)}</span>`;
     button.addEventListener("click", () => {
       if (activeSupernova) {
         activateSupernova(unit);
+        return;
+      }
+      if (ability.type === "weaponSwitch") {
+        switchTojiWeapon(unit, ability);
+        return;
+      }
+      if (ability.type === "sweepAttack") {
+        useSweepingStrike(unit, ability);
         return;
       }
       if (ability.type === "self") {
@@ -1491,13 +1618,15 @@ function renderTileInfo() {
     <div><strong>Unidad</strong>${occupant.name}</div>
     <div><strong>Equipo</strong>${occupant.team === "blue" ? "Azul" : "Rojo"}</div>
     <div><strong>Vida</strong>${occupant.hp}/${occupant.maxHp}</div>
-    <div><strong>CE</strong>${occupant.ce}/${occupant.maxCe}</div>
+    <div><strong>CE</strong>${ceLabel(occupant)}</div>
     <div><strong>Ataque</strong>${effectiveAttack(occupant)}</div>
     <div><strong>Defensa</strong>${defenseLabel(occupant)}</div>
     <div><strong>Movilidad</strong>${occupant.mobility}</div>
     <div><strong>Velocidad</strong>${effectiveSpeed(occupant)}</div>
     ${occupant.stance ? `<div><strong>Postura</strong>${stanceLabel(occupant)}</div>` : ""}
+    ${occupant.weapon ? `<div><strong>Arma</strong>${weaponName(occupant.weapon)}</div>` : ""}
     ${occupant.poisonStacks ? `<div><strong>Veneno</strong>${occupant.poisonStacks}/${POISON_MAX_STACKS} - ${occupant.poisonTurnsRemaining}t</div>` : ""}
+    ${occupant.bleedingTurnsRemaining ? `<div><strong>Sangrado</strong>${occupant.bleedingTurnsRemaining}t</div>` : ""}
     ${occupant.focus !== null ? `<div><strong>Focus</strong>${occupant.focus}/5</div>` : ""}
     ${hasYujiInBattle() ? `<div><strong>Dedos</strong>${occupant.sukunaFingers}</div>` : ""}
     ${hasYujiInBattle() ? `<div><strong>Entregados</strong>${totalFingerContributions(occupant)}</div>` : ""}
@@ -1547,6 +1676,10 @@ function handleTileClick(x, y, z) {
       useAreaAttackAbility(x, y, z);
       return;
     }
+    if (ability.type === "teleport") {
+      useTeleportAbility(x, y, z);
+      return;
+    }
     if (ability.type === "self" && occupant?.id === unit.id) {
       useSelfAbility(ability);
       return;
@@ -1559,6 +1692,7 @@ function handleTileClick(x, y, z) {
 
   if (!unit.moved && z === unit.z && state.reachable.has(tileKey) && canOccupyTile(unit, x, y, z)) {
     const from = { x: unit.x, y: unit.y, z: unit.z };
+    setFacingToward(unit, x, y);
     unit.x = x;
     unit.y = y;
     settleUnitPosition(unit);
@@ -1675,7 +1809,7 @@ function performAttack(attacker, target, label, options = {}) {
   const blackFlash = canBlackFlash && getPassive(attacker)?.id === "focus" && Math.random() < focusChance(attacker);
   const damageMultiplier = blackFlash ? getPassive(attacker).blackFlashDamageMultiplier : 1;
   const targetDefenseMultiplier = options.targetDefenseMultiplier ?? 1;
-  const targetDefense = isTerrainObject(target) ? 0 : Math.floor(effectiveDefense(target) * targetDefenseMultiplier);
+  const targetDefense = isTerrainObject(target) ? 0 : Math.floor(effectiveDefense(target, { ignoreActiveEffects: options.ignoreDefensiveEffects }) * targetDefenseMultiplier);
   const damage = Math.max(
     1,
     Math.floor((effectiveAttack(attacker) * attackMultiplier - targetDefense) * damageMultiplier * poisonDamageMultiplier(attacker, target)),
@@ -1698,6 +1832,8 @@ function performAttack(attacker, target, label, options = {}) {
   }
 
   if (options.appliesPoison && !isTerrainObject(target)) applyPoison(target);
+  if (options.appliesBleeding && !isTerrainObject(target)) applyBleeding(target);
+  if (options.knockback && !isTerrainObject(target)) pushTarget(attacker, target, options.knockback);
 
   if (triggersCounterattack && !isTerrainObject(target)) tryCounterattack(target, attacker);
   return damage;
@@ -1729,6 +1865,74 @@ function tryCounterattack(defender, attacker) {
   recoverDedicationCe(defender);
 }
 
+function switchTojiWeapon(unit, ability) {
+  if (!isToji(unit) || !ability?.weaponId || unit.weapon === ability.weaponId || weaponLock(unit, ability.weaponId) > 0) return;
+  if (unit.weapon) unit.weaponLocks[unit.weapon] = Math.max(weaponLock(unit, unit.weapon), TOJI_WEAPON_LOCK_TURNS);
+  unit.weapon = ability.weaponId;
+  unit.weaponLocks[ability.weaponId] = TOJI_WEAPON_LOCK_TURNS;
+  state.abilityMenuOpen = false;
+  state.selectedAbilityId = null;
+  addLog(`${unit.name} equipa ${weaponName(ability.weaponId)}.`);
+  calculateRanges();
+  render();
+}
+
+function pushTarget(attacker, target, distance = 1) {
+  if (!target || isTerrainObject(target) || target.hp <= 0) return;
+  const dx = Math.sign(target.x - attacker.x);
+  const dy = Math.sign(target.y - attacker.y);
+  if (!dx && !dy) return;
+
+  for (let step = 0; step < distance; step += 1) {
+    const nextX = target.x + dx;
+    const nextY = target.y + dy;
+    if (!canOccupyTile(target, nextX, nextY, target.z)) break;
+    target.x = nextX;
+    target.y = nextY;
+    settleUnitPosition(target);
+  }
+}
+
+function sweepTargetsFor(unit) {
+  const { dx, dy } = directionVector(unit.facing);
+  const left = { x: unit.x + dx - dy, y: unit.y + dy + dx };
+  const center = { x: unit.x + dx, y: unit.y + dy };
+  const right = { x: unit.x + dx + dy, y: unit.y + dy - dx };
+  return [left, center, right]
+    .filter(({ x, y }) => x >= 0 && x < SIZE && y >= 0 && y < SIZE)
+    .flatMap(({ x, y }) => {
+      const occupant = livingUnitAt(x, y, unit.z);
+      const terrainObject = terrainObjectAt(x, y, unit.z);
+      return [occupant?.team !== unit.team ? occupant : null, terrainObject].filter(Boolean);
+    });
+}
+
+function useSweepingStrike(unit, ability) {
+  if (!unit || unit.hp <= 0 || unit.acted || abilityCooldown(unit, ability.id) > 0 || unit.weapon !== ability.requiredWeapon) return;
+  const targets = sweepTargetsFor(unit);
+  if (!targets.length) return;
+
+  setAbilityCooldown(unit, ability);
+  for (const target of targets) {
+    performAttack(unit, target, ability.name, {
+      attackMultiplier: ability.attackMultiplier,
+      triggersCounterattack: false,
+      canBlackFlash: false,
+    });
+  }
+  unit.acted = true;
+  unit.moved = true;
+  state.abilityMenuOpen = false;
+  state.selectedAbilityId = null;
+  state.pendingTransfer = null;
+  if (checkVictory()) {
+    render();
+    return;
+  }
+  calculateRanges();
+  render();
+}
+
 function useOffense(target) {
   const unit = currentUnit();
   const targetKey = key(target.x, target.y, target.z);
@@ -1739,16 +1943,27 @@ function useOffense(target) {
   let canBlackFlash = true;
   let targetDefenseMultiplier = 1;
   let appliesPoison = isChoso(unit) && unit.stance === "blood" && !isTerrainObject(target);
+  let appliesBleeding = false;
+  let knockback = 0;
+  let ignoreDefensiveEffects = false;
   let triggersCounterattack = !(isChoso(unit) && unit.stance === "blood" && distance2d(unit, target.x, target.y) > 1);
+
+  setFacingToward(unit, target.x, target.y);
 
   if (isChoso(unit)) {
     label = unit.stance === "combat" ? "sangre endurecida" : "proyectil de sangre";
     canBlackFlash = false;
   }
+  if (isToji(unit) && unit.weapon === "invertedSpear") {
+    label = "Lanza invertida";
+    targetDefenseMultiplier = 0.5;
+    ignoreDefensiveEffects = true;
+    canBlackFlash = false;
+  }
 
   if (state.selectedAction === "skill") {
     const ability = getAbility(unit, state.selectedAbilityId);
-    if (!ability || !isAbilityAvailableInStance(unit, ability) || unit.ce < ability.ceCost || abilityCooldown(unit, ability.id) > 0) return;
+    if (!ability || !isAbilityAvailableForUnit(unit, ability) || unit.ce < ability.ceCost || abilityCooldown(unit, ability.id) > 0) return;
     if (ability.pattern === "line") {
       useLineAttackAbility(unit, target, ability);
       return;
@@ -1760,10 +1975,13 @@ function useOffense(target) {
     canBlackFlash = false;
     targetDefenseMultiplier = ability.defenseMultiplier ?? 1;
     appliesPoison = Boolean(ability.appliesPoison);
+    appliesBleeding = Boolean(ability.appliesBleeding);
+    knockback = ability.knockback ?? 0;
+    ignoreDefensiveEffects = Boolean(ability.ignoreDefensiveEffects);
     triggersCounterattack = false;
   }
 
-  performAttack(unit, target, label, { attackMultiplier, canBlackFlash, targetDefenseMultiplier, appliesPoison, triggersCounterattack });
+  performAttack(unit, target, label, { attackMultiplier, canBlackFlash, targetDefenseMultiplier, appliesPoison, appliesBleeding, knockback, ignoreDefensiveEffects, triggersCounterattack });
   gainFocusAfterAttack(unit);
   unit.acted = true;
   unit.moved = true;
@@ -1795,6 +2013,7 @@ function lineTargetsFor(unit, target, ability) {
     const terrainObject = terrainObjectAt(x, y, unit.z);
     if (occupant && occupant.team !== unit.team) targets.push(occupant);
     if (terrainObject) targets.push(terrainObject);
+    if ((occupant || terrainObject) && !ability.passesThrough) break;
   }
   return targets;
 }
@@ -1805,11 +2024,15 @@ function useLineAttackAbility(unit, target, ability) {
 
   unit.ce -= ability.ceCost;
   setAbilityCooldown(unit, ability);
+  setFacingToward(unit, target.x, target.y);
   for (const lineTarget of targets) {
     performAttack(unit, lineTarget, ability.name, {
       attackMultiplier: ability.attackMultiplier,
       targetDefenseMultiplier: ability.defenseMultiplier ?? 1,
       appliesPoison: ability.appliesPoison,
+      appliesBleeding: ability.appliesBleeding,
+      knockback: ability.knockback ?? 0,
+      ignoreDefensiveEffects: Boolean(ability.ignoreDefensiveEffects),
       triggersCounterattack: false,
       canBlackFlash: false,
     });
@@ -1947,7 +2170,7 @@ function activateSupernova(unit) {
 
 function useSelfAbility(ability) {
   const unit = currentUnit();
-  if (!unit || unit.hp <= 0 || !ability || !isAbilityAvailableInStance(unit, ability) || unit.acted || unit.ce < ability.ceCost || abilityCooldown(unit, ability.id) > 0) return;
+  if (!unit || unit.hp <= 0 || !ability || !isAbilityAvailableForUnit(unit, ability) || unit.acted || unit.ce < ability.ceCost || abilityCooldown(unit, ability.id) > 0) return;
 
   unit.ce -= ability.ceCost;
   setAbilityCooldown(unit, ability);
@@ -1986,6 +2209,31 @@ function useSupportAbility(x, y, z) {
   state.abilityMenuOpen = false;
   state.pendingTransfer = null;
   addLog(`${unit.name} usa ${ability.name} en ${x + 1},${y + 1}, nivel ${z + 1}.`);
+  calculateRanges();
+  render();
+}
+
+function useTeleportAbility(x, y, z) {
+  const unit = currentUnit();
+  const ability = selectedAbility();
+  if (!unit || unit.hp <= 0 || !ability || ability.type !== "teleport" || unit.acted || abilityCooldown(unit, ability.id) > 0) return;
+  if (!state.abilityTargets.has(key(x, y, z))) return;
+
+  const from = { x: unit.x, y: unit.y, z: unit.z };
+  setAbilityCooldown(unit, ability);
+  setFacingToward(unit, x, y);
+  unit.x = x;
+  unit.y = y;
+  unit.z = z;
+  settleUnitPosition(unit);
+  unit.acted = true;
+  unit.moved = true;
+  state.previewLevel = unit.z;
+  state.selectedAbilityId = null;
+  state.abilityMenuOpen = false;
+  state.pendingTransfer = null;
+  queueVisualEvent("move", { unitId: unit.id, from, to: { x: unit.x, y: unit.y, z: unit.z } });
+  addLog(`${unit.name} usa ${ability.name} a ${unit.x + 1},${unit.y + 1}, nivel ${unit.z + 1}.`);
   calculateRanges();
   render();
 }

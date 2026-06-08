@@ -620,6 +620,11 @@ button.primary {
 }
 
 .level-board.other-turn-level .tile.stairs::before,
+.level-board.other-turn-level .tile.hole::after,
+.level-board.other-turn-level .terrain-object,
+.level-board.other-turn-level .terrain-hp,
+.level-board.other-turn-level .finger-token,
+.level-board.other-turn-level .supernova-orb,
 .level-board.other-turn-level .level-label {
   opacity: 0.16;
 }
@@ -710,6 +715,14 @@ button.primary {
   pointer-events: none;
 }
 
+.level-board.focus-level .tile.hole::after {
+  z-index: 8;
+  transform:
+    translateZ(22px)
+    rotateZ(38deg)
+    rotateX(-52deg);
+}
+
 .tile.selected {
   outline: 4px solid var(--stairs);
   outline-offset: -4px;
@@ -727,6 +740,20 @@ button.primary {
     linear-gradient(90deg, transparent 0 28%, rgba(20, 21, 16, 0.8) 28% 36%, transparent 36%),
     repeating-linear-gradient(to bottom, var(--stairs) 0 4px, #9c7930 4px 8px);
   opacity: 0.95;
+  z-index: 2;
+  transform:
+    translateZ(6px)
+    rotateZ(38deg)
+    rotateX(-52deg);
+  pointer-events: none;
+}
+
+.level-board.focus-level .tile.stairs::before {
+  z-index: 8;
+  transform:
+    translateZ(22px)
+    rotateZ(38deg)
+    rotateX(-52deg);
 }
 
 .unit {
@@ -861,7 +888,7 @@ button.primary {
   top: 50%;
   width: 58%;
   height: 58%;
-  z-index: 4;
+  z-index: 6;
   border: 2px solid rgba(20, 21, 16, 0.78);
   background:
     linear-gradient(135deg, rgba(255, 255, 255, 0.2), transparent 36%),
@@ -875,6 +902,15 @@ button.primary {
     rotateZ(38deg)
     rotateX(-52deg);
   pointer-events: none;
+}
+
+.level-board.focus-level .terrain-object {
+  z-index: 9;
+  transform:
+    translate(-50%, -50%)
+    translateZ(24px)
+    rotateZ(38deg)
+    rotateX(-52deg);
 }
 
 .terrain-object.pillar {
@@ -896,8 +932,21 @@ button.primary {
   overflow: hidden;
   background: rgba(0, 0, 0, 0.36);
   z-index: 5;
-  transform: translateX(-50%) rotateZ(38deg) rotateX(-52deg);
+  transform:
+    translateX(-50%)
+    translateZ(18px)
+    rotateZ(38deg)
+    rotateX(-52deg);
   pointer-events: none;
+}
+
+.level-board.focus-level .terrain-hp {
+  z-index: 9;
+  transform:
+    translateX(-50%)
+    translateZ(24px)
+    rotateZ(38deg)
+    rotateX(-52deg);
 }
 
 .terrain-hp span {
@@ -920,7 +969,7 @@ button.primary {
   color: #161712;
   font-size: 9px;
   font-weight: 900;
-  z-index: 8;
+  z-index: 7;
   box-shadow:
     0 0 0 2px rgba(20, 21, 16, 0.32),
     0 4px 8px rgba(0, 0, 0, 0.38);
@@ -929,6 +978,14 @@ button.primary {
     rotateZ(38deg)
     rotateX(-52deg);
   pointer-events: none;
+}
+
+.level-board.focus-level .finger-token {
+  z-index: 9;
+  transform:
+    translateZ(24px)
+    rotateZ(38deg)
+    rotateX(-52deg);
 }
 
 .supernova-orb {
@@ -956,6 +1013,15 @@ button.primary {
     rotateZ(38deg)
     rotateX(-52deg);
   pointer-events: none;
+}
+
+.level-board.focus-level .supernova-orb {
+  z-index: 9;
+  transform:
+    translate(-50%, -50%)
+    translateZ(24px)
+    rotateZ(38deg)
+    rotateX(-52deg);
 }
 
 .supernova-orb.blue-orb {

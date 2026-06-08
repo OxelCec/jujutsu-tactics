@@ -341,6 +341,118 @@ function startMiwaMirrorBattle(document) {
   clickButton(document, "Empezar batalla");
 }
 
+function startTojiVsMiwaBattle(document) {
+  clickButton(document, "Iniciar juego");
+  clickRosterCard(document, "Toji");
+  clickButton(document, "Equipo rojo");
+  clickRosterCard(document, "Miwa");
+  clickButton(document, "Elegir mapa");
+  clickButton(document, "Empezar batalla");
+}
+
+test("Toji has no CE, weapon locks, spear thrust knockback, and katana bleeding", async () => {
+  const dom = await loadGame();
+  const { document } = dom.window;
+  startTojiVsMiwaBattle(document);
+
+  dom.window.eval(`
+    stopInitiativeClock();
+    const toji = livingUnits().find((unit) => unit.characterId === "toji");
+    const miwa = livingUnits().find((unit) => unit.characterId === "miwa");
+    selectNextTurn([toji]);
+    toji.x = 1;
+    toji.y = 1;
+    toji.z = 1;
+    miwa.x = 3;
+    miwa.y = 1;
+    miwa.z = 1;
+    calculateRanges();
+  `);
+
+  assert.equal(dom.window.eval("currentUnit().maxCe"), 0);
+  assert.equal(dom.window.eval("currentUnit().weapon"), "invertedSpear");
+  assert.match(document.querySelector("#unitCard").textContent, /Sin CE/);
+
+  document.querySelector("#skillBtn").click();
+  clickAbility(document, "Spear Thrust");
+  dom.window.eval("handleTileClick(3, 1, 1)");
+  assert.equal(dom.window.eval('livingUnits().find((unit) => unit.characterId === "miwa").x'), 4);
+  assert.equal(dom.window.eval('abilityCooldown(livingUnits().find((unit) => unit.characterId === "toji"), "spearThrust")'), 3);
+
+  dom.window.eval(`
+    const toji = livingUnits().find((unit) => unit.characterId === "toji");
+    const miwa = livingUnits().find((unit) => unit.characterId === "miwa");
+    selectNextTurn([toji]);
+    toji.acted = false;
+    toji.moved = false;
+    miwa.x = 2;
+    miwa.y = 1;
+    miwa.z = 1;
+    miwa.hp = 100;
+    calculateRanges();
+  `);
+  document.querySelector("#skillBtn").click();
+  clickAbility(document, "Equipar katana");
+  assert.equal(dom.window.eval("currentUnit().weapon"), "splitSoulKatana");
+  assert.equal(dom.window.eval('weaponLock(currentUnit(), "invertedSpear")'), 3);
+  assert.equal(dom.window.eval('weaponLock(currentUnit(), "splitSoulKatana")'), 3);
+  assert.equal(dom.window.eval("currentUnit().acted"), false);
+
+  document.querySelector("#skillBtn").click();
+  clickAbility(document, "Deep Cut");
+  dom.window.eval("handleTileClick(2, 1, 1)");
+  assert.equal(dom.window.eval('livingUnits().find((unit) => unit.characterId === "miwa").bleedingTurnsRemaining'), 3);
+
+  dom.window.close();
+});
+
+test("Toji can use Chain Weapon sweep and Phantom Step between floors", async () => {
+  const dom = await loadGame();
+  const { document } = dom.window;
+  startTojiVsMiwaBattle(document);
+
+  dom.window.eval(`
+    stopInitiativeClock();
+    const toji = livingUnits().find((unit) => unit.characterId === "toji");
+    const miwa = livingUnits().find((unit) => unit.characterId === "miwa");
+    selectNextTurn([toji]);
+    toji.weapon = "chainWeapon";
+    toji.weaponLocks = {};
+    toji.x = 1;
+    toji.y = 1;
+    toji.z = 1;
+    toji.facing = "south";
+    miwa.x = 1;
+    miwa.y = 2;
+    miwa.z = 1;
+    calculateRanges();
+  `);
+
+  const hpBefore = dom.window.eval('livingUnits().find((unit) => unit.characterId === "miwa").hp');
+  document.querySelector("#skillBtn").click();
+  clickAbility(document, "Sweeping Strike");
+  assert.ok(dom.window.eval('livingUnits().find((unit) => unit.characterId === "miwa").hp') < hpBefore);
+  assert.equal(dom.window.eval('abilityCooldown(livingUnits().find((unit) => unit.characterId === "toji"), "sweepingStrike")'), 4);
+
+  dom.window.eval(`
+    const toji = livingUnits().find((unit) => unit.characterId === "toji");
+    toji.acted = false;
+    toji.moved = false;
+    toji.abilityCooldowns = {};
+    toji.x = 1;
+    toji.y = 1;
+    toji.z = 1;
+    calculateRanges();
+  `);
+  document.querySelector("#skillBtn").click();
+  clickAbility(document, "Phantom Step");
+  dom.window.eval("handleTileClick(1, 1, 2)");
+  assert.equal(dom.window.eval("currentUnit().z"), 2);
+  assert.equal(dom.window.eval('abilityCooldown(currentUnit(), "phantomStep")'), 5);
+
+  dom.window.close();
+});
+
 test("Miwa counterattacks and recovers CE with Dedicacion", async () => {
   const dom = await loadGame();
   const { document } = dom.window;
@@ -765,6 +877,7 @@ test("Sukuna Fingers can be picked up, transferred to Yuji, and tracked by giver
     miwa.x = yuji.x + 1;
     miwa.y = yuji.y;
     miwa.z = yuji.z;
+    clearFingerPiles();
     addFingerPile(miwa.x, miwa.y, miwa.z, 3);
     advanceToNextTurn();
     stopInitiativeClock();
