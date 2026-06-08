@@ -735,6 +735,8 @@ button.primary {
   top: 50%;
   width: 58%;
   height: 58%;
+  --unit-depth: 14px;
+  --unit-rotation: 38deg;
   filter: drop-shadow(0 4px 2px rgba(0, 0, 0, 0.35));
   z-index: 3;
   pointer-events: none;
@@ -752,8 +754,17 @@ button.primary {
 }
 
 .level-board .unit {
-  transform: translate(-50%, -50%) rotateZ(38deg) rotateX(-52deg);
+  transform:
+    translate(-50%, -50%)
+    translateZ(var(--unit-depth))
+    rotateZ(var(--unit-rotation))
+    rotateX(-52deg);
   transform-origin: center;
+}
+
+.level-board.focus-level .unit {
+  --unit-depth: 28px;
+  z-index: 12;
 }
 
 .unit.circle,
@@ -771,10 +782,6 @@ button.primary {
   clip-path: polygon(50% 7%, 94% 92%, 6% 92%);
 }
 
-.level-board .unit.triangle {
-  transform: translate(-50%, -50%) rotateZ(38deg) rotateX(-52deg);
-}
-
 .mini-shape.triangle {
   background: currentColor;
 }
@@ -785,7 +792,7 @@ button.primary {
 }
 
 .level-board .unit.diamond {
-  transform: translate(-50%, -50%) rotateZ(83deg) rotateX(-52deg);
+  --unit-rotation: 83deg;
 }
 
 .blue-unit {
@@ -808,8 +815,21 @@ button.primary {
   overflow: hidden;
   background: rgba(0, 0, 0, 0.35);
   z-index: 2;
-  transform: translateX(-50%) rotateZ(38deg) rotateX(-52deg);
+  transform:
+    translateX(-50%)
+    translateZ(16px)
+    rotateZ(38deg)
+    rotateX(-52deg);
   transform-origin: center;
+}
+
+.level-board.focus-level .hp {
+  z-index: 11;
+  transform:
+    translateX(-50%)
+    translateZ(28px)
+    rotateZ(38deg)
+    rotateX(-52deg);
 }
 
 .hp span {
