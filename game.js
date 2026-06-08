@@ -19,6 +19,7 @@ const CHOSO_BLOOD_DEFENSE_MULTIPLIER = 0.85;
 const CHOSO_COMBAT_DEFENSE_MULTIPLIER = 1.3;
 const POISON_MAX_STACKS = 3;
 const POISON_DAMAGE_PER_STACK = 4;
+const POISON_DURATION_TURNS = 2;
 const SUPERNOVA_DURATION_TURNS = 3;
 let initiativeFrameId = null;
 let lastInitiativeAt = 0;
@@ -39,6 +40,8 @@ const state = {
   visualEvents: [],
   fingers: [],
   supernovas: [],
+  holes: [],
+  terrainObjects: [],
   yujiFingerState: {},
   round: 1,
   turnCount: 0,
@@ -117,6 +120,7 @@ function createBattleUnit(character, team, index) {
     focus: character.passiveId === "focus" ? 0 : null,
     stance: character.defaultStance ?? null,
     poisonStacks: 0,
+    poisonTurnsRemaining: 0,
     sukunaFingers: 0,
     attackedThisTurn: false,
     abilityCooldowns: {},
@@ -151,6 +155,11 @@ function initBattle() {
   state.attackable.clear();
   state.abilityTargets.clear();
   state.visualEvents = [];
+  state.holes = (activeMap.holes ?? []).map((hole) => ({ ...hole }));
+  state.terrainObjects = (activeMap.terrainObjects ?? []).map((object) => ({
+    ...object,
+    hp: object.maxHp,
+  }));
   state.fingers = spawnSukunaFingers();
   state.supernovas = [];
   state.yujiFingerState = Object.fromEntries(
@@ -347,6 +356,35 @@ function livingUnitAt(x, y, z) {
   return livingUnits().find((unit) => unit.x === x && unit.y === y && unit.z === z);
 }
 
+function terrainObjectAt(x, y, z) {
+  return state.terrainObjects.find((object) => object.x === x && object.y === y && object.z === z);
+}
+
+function solidTerrainAt(x, y, z) {
+  return terrainObjectAt(x, y, z);
+}
+
+function holeAt(x, y, z) {
+  return state.holes.find((hole) => hole.x === x && hole.y === y && hole.z === z);
+}
+
+function addHole(x, y, z) {
+  if (z <= 0 || z >= LEVELS || holeAt(x, y, z)) return;
+  state.holes.push({ id: `hole-${Date.now()}-${state.holes.length}`, x, y, z });
+  addLog(`Se abre un agujero en ${x + 1},${y + 1}, nivel ${z + 1}.`);
+}
+
+function canChangeLevel(unit, direction) {
+  if (!unit) return false;
+  const nextZ = unit.z + direction;
+  if (nextZ < 0 || nextZ >= LEVELS) return false;
+  if (unitAt(unit.x, unit.y, nextZ) || solidTerrainAt(unit.x, unit.y, nextZ)) return false;
+
+  const stair = stairAt(unit.x, unit.y, unit.z);
+  if (stair?.levels.includes(nextZ)) return true;
+  return direction < 0 && Boolean(holeAt(unit.x, unit.y, unit.z));
+}
+
 function fingerPileAt(x, y, z) {
   return state.fingers.find((pile) => pile.x === x && pile.y === y && pile.z === z);
 }
@@ -357,6 +395,10 @@ function supernovaAt(x, y, z) {
 
 function activeSupernovaForUnit(unit) {
   return unit ? state.supernovas.find((orb) => orb.ownerId === unit.id) : null;
+}
+
+function isTerrainObject(target) {
+  return Boolean(target?.type === "cube" || target?.type === "pillar");
 }
 
 function addFingerPile(x, y, z, count) {
@@ -376,7 +418,10 @@ function removeFingerPile(pile) {
 function spawnSukunaFingers() {
   if (!hasYujiInBattle()) return [];
 
-  const blocked = new Set(state.units.map((unit) => key(unit.x, unit.y, unit.z)));
+  const blocked = new Set([
+    ...state.units.map((unit) => key(unit.x, unit.y, unit.z)),
+    ...state.terrainObjects.map((object) => key(object.x, object.y, object.z)),
+  ]);
   const piles = [];
   let attempts = 0;
   while (piles.length < SUKUNA_FINGER_COUNT && attempts < 1000) {
@@ -578,9 +623,12 @@ function applyPoison(target, amount = 1) {
   if (target.hp <= 0) return;
   const before = target.poisonStacks ?? 0;
   target.poisonStacks = Math.min(POISON_MAX_STACKS, before + amount);
+  target.poisonTurnsRemaining = POISON_DURATION_TURNS;
   if (target.poisonStacks !== before) {
     addLog(`${target.name} recibe Veneno (${target.poisonStacks}/${POISON_MAX_STACKS}).`);
+    return;
   }
+  addLog(`Veneno de ${target.name} se mantiene (${target.poisonTurnsRemaining} turnos).`);
 }
 
 function poisonDamageMultiplier(attacker, target) {
@@ -594,6 +642,7 @@ function processPoisonStartOfTurn(unit) {
   const damage = unit.poisonStacks * POISON_DAMAGE_PER_STACK;
   unit.hp = Math.max(0, unit.hp - damage);
   addLog(`${unit.name} sufre ${damage} dano por Veneno.`);
+  unit.poisonTurnsRemaining = Math.max(0, (unit.poisonTurnsRemaining ?? POISON_DURATION_TURNS) - 1);
   if (unit.hp > 0) return false;
   handleUnitDefeated(unit);
   if (checkVictory()) {
@@ -604,6 +653,13 @@ function processPoisonStartOfTurn(unit) {
   render();
   startInitiativeClock();
   return true;
+}
+
+function clearExpiredPoison(unit) {
+  if (unit.hp <= 0 || !unit.poisonStacks || unit.poisonTurnsRemaining > 0) return;
+  unit.poisonStacks = 0;
+  unit.poisonTurnsRemaining = 0;
+  addLog(`Veneno de ${unit.name} se disipa.`);
 }
 
 function selectedAbility() {
@@ -682,6 +738,7 @@ function selectNextTurn(ready) {
   if (handleDeadYujiTurn(next)) return;
   expireTurnEffects(next);
   if (processPoisonStartOfTurn(next)) return;
+  clearExpiredPoison(next);
   regenerateTurnCe(next);
   tickAbilityCooldowns(next);
   next.initiative = 0;
@@ -758,13 +815,21 @@ function calculateRanges() {
   if (!unit || unit.hp <= 0 || state.gameOver) return;
 
   if (!unit.moved) {
-    for (let y = 0; y < SIZE; y += 1) {
-      for (let x = 0; x < SIZE; x += 1) {
-        const distance = distance2d(unit, x, y);
-        const occupied = unitAt(x, y, unit.z);
-        if (distance <= unit.mobility && (!occupied || occupied.id === unit.id)) {
-          state.reachable.add(key(x, y, unit.z));
-        }
+    const queue = [{ x: unit.x, y: unit.y, distance: 0 }];
+    const visited = new Set([key(unit.x, unit.y, unit.z)]);
+    while (queue.length) {
+      const current = queue.shift();
+      state.reachable.add(key(current.x, current.y, unit.z));
+      if (current.distance >= unit.mobility) continue;
+
+      for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+        const x = current.x + dx;
+        const y = current.y + dy;
+        const tileKey = key(x, y, unit.z);
+        if (x < 0 || x >= SIZE || y < 0 || y >= SIZE || visited.has(tileKey)) continue;
+        if (unitAt(x, y, unit.z) || solidTerrainAt(x, y, unit.z)) continue;
+        visited.add(tileKey);
+        queue.push({ x, y, distance: current.distance + 1 });
       }
     }
   }
@@ -773,6 +838,10 @@ function calculateRanges() {
     for (const enemy of livingUnits().filter((target) => target.team !== unit.team && target.z === unit.z)) {
       const distance = distance2d(unit, enemy.x, enemy.y);
       if (distance > 0 && distance <= basicAttackRange(unit)) state.attackable.add(enemy.id);
+    }
+    for (const object of state.terrainObjects.filter((target) => target.z === unit.z)) {
+      const distance = distance2d(unit, object.x, object.y);
+      if (distance > 0 && distance <= basicAttackRange(unit)) state.attackable.add(object.id);
     }
   }
 
@@ -787,8 +856,9 @@ function calculateRanges() {
     for (let x = 0; x < SIZE; x += 1) {
       if (distance2d(unit, x, y) > ability.range) continue;
       const occupant = livingUnitAt(x, y, unit.z);
+      const terrainObject = terrainObjectAt(x, y, unit.z);
       const validLine = ability.pattern !== "line" || unit.x === x || unit.y === y;
-      if (ability.type === "attack" && occupant?.team !== unit.team && validLine) {
+      if (ability.type === "attack" && ((occupant && occupant.team !== unit.team) || terrainObject) && validLine) {
         state.abilityTargets.add(key(x, y, unit.z));
       }
       if (ability.type === "areaAttack") {
@@ -852,7 +922,7 @@ function renderTeamList() {
       const fingerInfo = hasYujiInBattle()
         ? ` - ${unit.sukunaFingers} dedos${isYuji(unit) ? ` - ${yujiFingerState(unit)?.consumed ?? 0} consumidos` : ""}${totalFingerContributions(unit) ? ` - ${totalFingerContributions(unit)} dados` : ""}`
         : "";
-      const statusInfo = `${unit.stance ? ` - ${stanceLabel(unit)}` : ""}${unit.poisonStacks ? ` - Veneno ${unit.poisonStacks}` : ""}`;
+      const statusInfo = `${unit.stance ? ` - ${stanceLabel(unit)}` : ""}${unit.poisonStacks ? ` - Veneno ${unit.poisonStacks} (${unit.poisonTurnsRemaining})` : ""}`;
       copy.innerHTML = `<strong>${unit.name}</strong><small>${unit.hp}/${unit.maxHp} vida - ${unit.ce}/${unit.maxCe} CE${statusInfo}${fingerInfo}</small>`;
 
       button.append(portrait, copy);
@@ -905,6 +975,8 @@ function renderTile(x, y, z) {
   const tile = document.createElement("button");
   const tileKey = key(x, y, z);
   const occupant = unitAt(x, y, z);
+  const terrainObject = terrainObjectAt(x, y, z);
+  const hole = holeAt(x, y, z);
   const fingerPile = fingerPileAt(x, y, z);
   const supernova = supernovaAt(x, y, z);
   const ability = selectedAbility();
@@ -913,12 +985,22 @@ function renderTile(x, y, z) {
   tile.setAttribute("aria-label", `Casilla ${x + 1}, ${y + 1}, nivel ${z + 1}`);
 
   if (stairAt(x, y, z)) tile.classList.add("stairs");
+  if (hole) tile.classList.add("hole");
+  if (terrainObject) tile.classList.add("terrain-tile");
   if (fingerPile) tile.classList.add("finger-tile");
   if (supernova) tile.classList.add("supernova-tile");
   if (state.reachable.has(tileKey)) tile.classList.add("move");
   if (state.abilityTargets.has(tileKey)) tile.classList.add(ability?.type === "attack" ? "skill-attack" : "skill-support");
-  if (occupant && state.attackable.has(occupant.id)) tile.classList.add("attack");
+  if ((occupant && state.attackable.has(occupant.id)) || (terrainObject && state.attackable.has(terrainObject.id))) tile.classList.add("attack");
   if (unit && unit.x === x && unit.y === y && unit.z === z) tile.classList.add("selected");
+
+  if (terrainObject) {
+    tile.append(renderTerrainObject(terrainObject));
+    const hp = document.createElement("span");
+    hp.className = "terrain-hp";
+    hp.innerHTML = `<span style="width:${(terrainObject.hp / terrainObject.maxHp) * 100}%"></span>`;
+    tile.append(hp);
+  }
 
   if (occupant) {
     const otherFloorUnit = occupant.z !== state.previewLevel;
@@ -956,6 +1038,13 @@ function renderUnit(unit, extraClass = "") {
   const el = document.createElement("span");
   el.className = `unit ${unit.shape} ${unit.team}-unit ${unit.hp <= 0 ? "dead-unit" : ""} ${extraClass}`.trim();
   el.title = unit.name;
+  return el;
+}
+
+function renderTerrainObject(object) {
+  const el = document.createElement("span");
+  el.className = `terrain-object ${object.type}`;
+  el.title = `${object.name}: ${object.hp}/${object.maxHp}`;
   return el;
 }
 
@@ -1031,7 +1120,7 @@ function renderPanel() {
       <div class="stat"><strong>Movilidad</strong>${displayUnit.mobility}</div>
       <div class="stat"><strong>Velocidad</strong>${effectiveSpeed(displayUnit)}</div>
       ${displayUnit.stance ? `<div class="stat"><strong>Postura</strong>${stanceLabel(displayUnit)}</div>` : ""}
-      ${displayUnit.poisonStacks ? `<div class="stat"><strong>Veneno</strong>${displayUnit.poisonStacks}/${POISON_MAX_STACKS}</div>` : ""}
+      ${displayUnit.poisonStacks ? `<div class="stat"><strong>Veneno</strong>${displayUnit.poisonStacks}/${POISON_MAX_STACKS} - ${displayUnit.poisonTurnsRemaining}t</div>` : ""}
       ${displayUnit.focus !== null ? `<div class="stat"><strong>Focus</strong>${displayUnit.focus}/5</div>` : ""}
       ${hasYujiInBattle() ? `<div class="stat"><strong>Dedos</strong>${displayUnit.sukunaFingers}</div>` : ""}
       ${hasYujiInBattle() ? `<div class="stat"><strong>Entregados</strong>${totalFingerContributions(displayUnit)}</div>` : ""}
@@ -1058,7 +1147,6 @@ function renderPanel() {
     return;
   }
 
-  const onStair = stairAt(unit.x, unit.y, unit.z);
   const unitDefeated = unit.hp <= 0;
   attackBtn.disabled = state.gameOver || unitDefeated || unit.acted || !state.attackable.size;
   attackBtn.classList.toggle("active", state.selectedAction === "attack");
@@ -1069,8 +1157,8 @@ function renderPanel() {
   specialBtn.classList.toggle("hidden", !hasYujiInBattle());
   specialBtn.textContent = canTransferFingers(unit) ? "Dar dedos" : "Especial";
   specialBtn.disabled = state.gameOver || unitDefeated || !canTransferFingers(unit);
-  stairsUpBtn.disabled = state.gameOver || unitDefeated || !onStair || !onStair.levels.includes(unit.z + 1) || Boolean(unitAt(unit.x, unit.y, unit.z + 1));
-  stairsDownBtn.disabled = state.gameOver || unitDefeated || !onStair || !onStair.levels.includes(unit.z - 1) || Boolean(unitAt(unit.x, unit.y, unit.z - 1));
+  stairsUpBtn.disabled = state.gameOver || unitDefeated || !canChangeLevel(unit, 1);
+  stairsDownBtn.disabled = state.gameOver || unitDefeated || !canChangeLevel(unit, -1);
   endBtn.disabled = state.gameOver;
   renderAbilityMenu(unit, turnAbilities);
   renderTransferPanel(unit);
@@ -1141,10 +1229,12 @@ function renderTileInfo() {
 
   const { x, y, z } = state.inspectedTile;
   const occupant = unitAt(x, y, z);
+  const terrainObject = terrainObjectAt(x, y, z);
   const stair = stairAt(x, y, z);
+  const hole = holeAt(x, y, z);
   const fingerPile = fingerPileAt(x, y, z);
   const supernova = supernovaAt(x, y, z);
-  const tileKind = stair ? "Escalera" : "Suelo";
+  const tileKind = stair ? "Escalera" : hole ? "Agujero" : "Suelo";
   const tileState = [
     state.reachable.has(key(x, y, z)) ? "Movimiento posible" : "",
     state.abilityTargets.has(key(x, y, z)) ? "Objetivo de habilidad" : "",
@@ -1157,6 +1247,8 @@ function renderTileInfo() {
   const meta = document.createElement("p");
   const tileDetails = [...tileState];
   if (fingerPile) tileDetails.push(`${fingerPile.count} dedo${fingerPile.count === 1 ? "" : "s"} de Sukuna`);
+  if (hole) tileDetails.push("Bajada al nivel inferior");
+  if (terrainObject) tileDetails.push(`${terrainObject.name}: ${terrainObject.hp}/${terrainObject.maxHp} vida`);
   if (supernova) {
     const owner = state.units.find((unit) => unit.id === supernova.ownerId);
     tileDetails.push(`Supernova de ${owner?.name ?? "Choso"} (${supernova.remainingTurns})`);
@@ -1164,12 +1256,26 @@ function renderTileInfo() {
   meta.textContent = tileDetails.length ? tileDetails.join(" - ") : "Sin marcador activo";
   tileInfoEl.append(meta);
 
-  if (!occupant) {
+  if (!occupant && !terrainObject) {
     const empty = document.createElement("p");
     empty.textContent = "No hay unidad en esta casilla.";
     tileInfoEl.append(empty);
     return;
   }
+
+  if (terrainObject) {
+    const objectStats = document.createElement("div");
+    objectStats.className = "inspect-grid";
+    objectStats.innerHTML = `
+      <div><strong>Objeto</strong>${terrainObject.name}</div>
+      <div><strong>Tipo</strong>${terrainObject.type === "pillar" ? "Pilar" : "Cubo"}</div>
+      <div><strong>Vida</strong>${terrainObject.hp}/${terrainObject.maxHp}</div>
+      <div><strong>Bloquea</strong>Movimiento</div>
+    `;
+    tileInfoEl.append(objectStats);
+  }
+
+  if (!occupant) return;
 
   const stats = document.createElement("div");
   stats.className = "inspect-grid";
@@ -1183,7 +1289,7 @@ function renderTileInfo() {
     <div><strong>Movilidad</strong>${occupant.mobility}</div>
     <div><strong>Velocidad</strong>${effectiveSpeed(occupant)}</div>
     ${occupant.stance ? `<div><strong>Postura</strong>${stanceLabel(occupant)}</div>` : ""}
-    ${occupant.poisonStacks ? `<div><strong>Veneno</strong>${occupant.poisonStacks}/${POISON_MAX_STACKS}</div>` : ""}
+    ${occupant.poisonStacks ? `<div><strong>Veneno</strong>${occupant.poisonStacks}/${POISON_MAX_STACKS} - ${occupant.poisonTurnsRemaining}t</div>` : ""}
     ${occupant.focus !== null ? `<div><strong>Focus</strong>${occupant.focus}/5</div>` : ""}
     ${hasYujiInBattle() ? `<div><strong>Dedos</strong>${occupant.sukunaFingers}</div>` : ""}
     ${hasYujiInBattle() ? `<div><strong>Entregados</strong>${totalFingerContributions(occupant)}</div>` : ""}
@@ -1204,6 +1310,7 @@ function handleTileClick(x, y, z) {
 
   state.inspectedTile = { x, y, z };
   const occupant = unitAt(x, y, z);
+  const terrainObject = terrainObjectAt(x, y, z);
   const tileKey = key(x, y, z);
   const ability = selectedAbility();
 
@@ -1214,9 +1321,18 @@ function handleTileClick(x, y, z) {
     return;
   }
 
+  if (state.selectedAction === "attack" && terrainObject && state.attackable.has(terrainObject.id)) {
+    useOffense(terrainObject);
+    return;
+  }
+
   if (state.selectedAction === "skill" && ability && state.abilityTargets.has(tileKey)) {
     if (ability.type === "attack" && occupant?.team === enemyTeam(unit.team)) {
       useOffense(occupant);
+      return;
+    }
+    if (ability.type === "attack" && terrainObject) {
+      useOffense(terrainObject);
       return;
     }
     if (ability.type === "areaAttack") {
@@ -1233,7 +1349,7 @@ function handleTileClick(x, y, z) {
     }
   }
 
-  if (!unit.moved && z === unit.z && state.reachable.has(tileKey) && (!occupant || occupant.id === unit.id)) {
+  if (!unit.moved && z === unit.z && state.reachable.has(tileKey) && !terrainObject && (!occupant || occupant.id === unit.id)) {
     const from = { x: unit.x, y: unit.y, z: unit.z };
     unit.x = x;
     unit.y = y;
@@ -1350,7 +1466,7 @@ function performAttack(attacker, target, label, options = {}) {
   const blackFlash = canBlackFlash && getPassive(attacker)?.id === "focus" && Math.random() < focusChance(attacker);
   const damageMultiplier = blackFlash ? getPassive(attacker).blackFlashDamageMultiplier : 1;
   const targetDefenseMultiplier = options.targetDefenseMultiplier ?? 1;
-  const targetDefense = Math.floor(effectiveDefense(target) * targetDefenseMultiplier);
+  const targetDefense = isTerrainObject(target) ? 0 : Math.floor(effectiveDefense(target) * targetDefenseMultiplier);
   const damage = Math.max(
     1,
     Math.floor((effectiveAttack(attacker) * attackMultiplier - targetDefense) * damageMultiplier * poisonDamageMultiplier(attacker, target)),
@@ -1367,13 +1483,14 @@ function performAttack(attacker, target, label, options = {}) {
   });
   addLog(`${attacker.name} usa ${blackFlash ? "Black Flash" : label} contra ${target.name}: ${damage} dano.`);
   if (wasAlive && target.hp === 0) {
-    handleUnitDefeated(target);
+    if (isTerrainObject(target)) handleTerrainDestroyed(target);
+    else handleUnitDefeated(target);
     return damage;
   }
 
-  if (options.appliesPoison) applyPoison(target);
+  if (options.appliesPoison && !isTerrainObject(target)) applyPoison(target);
 
-  if (triggersCounterattack) tryCounterattack(target, attacker);
+  if (triggersCounterattack && !isTerrainObject(target)) tryCounterattack(target, attacker);
   return damage;
 }
 
@@ -1386,6 +1503,12 @@ function handleUnitDefeated(unit) {
   addLog(`${unit.name} queda fuera.`);
 }
 
+function handleTerrainDestroyed(object) {
+  state.terrainObjects = state.terrainObjects.filter((entry) => entry.id !== object.id);
+  addLog(`${object.name} se rompe.`);
+  if (object.type === "pillar") addHole(object.x, object.y, object.z + 1);
+}
+
 function tryCounterattack(defender, attacker) {
   if (!defender.activeEffects.counterattack || defender.hp <= 0 || attacker.hp <= 0) return;
   performAttack(defender, attacker, "Contraataque", { triggersCounterattack: false });
@@ -1394,13 +1517,14 @@ function tryCounterattack(defender, attacker) {
 
 function useOffense(target) {
   const unit = currentUnit();
-  if (!unit || unit.hp <= 0 || unit.acted || !state.attackable.has(target.id)) return;
+  const targetKey = key(target.x, target.y, target.z);
+  if (!unit || unit.hp <= 0 || unit.acted || (!state.attackable.has(target.id) && !state.abilityTargets.has(targetKey))) return;
 
   let label = "ataque normal";
   let attackMultiplier = chosoBasicAttackMultiplier(unit, target);
   let canBlackFlash = true;
   let targetDefenseMultiplier = 1;
-  let appliesPoison = isChoso(unit) && unit.stance === "blood";
+  let appliesPoison = isChoso(unit) && unit.stance === "blood" && !isTerrainObject(target);
   let triggersCounterattack = !(isChoso(unit) && unit.stance === "blood" && distance2d(unit, target.x, target.y) > 1);
 
   if (isChoso(unit)) {
@@ -1454,7 +1578,9 @@ function lineTargetsFor(unit, target, ability) {
     const y = unit.y + dy * step;
     if (x < 0 || x >= SIZE || y < 0 || y >= SIZE) break;
     const occupant = livingUnitAt(x, y, unit.z);
+    const terrainObject = terrainObjectAt(x, y, unit.z);
     if (occupant && occupant.team !== unit.team) targets.push(occupant);
+    if (terrainObject) targets.push(terrainObject);
   }
   return targets;
 }
@@ -1499,11 +1625,17 @@ function useAreaAttackAbility(x, y, z) {
     return;
   }
 
-  const targets = livingUnits().filter((target) =>
-    target.team !== unit.team
-    && target.z === z
-    && Math.max(Math.abs(target.x - x), Math.abs(target.y - y)) <= ability.radius,
-  );
+  const targets = [
+    ...livingUnits().filter((target) =>
+      target.team !== unit.team
+      && target.z === z
+      && Math.max(Math.abs(target.x - x), Math.abs(target.y - y)) <= ability.radius,
+    ),
+    ...state.terrainObjects.filter((target) =>
+      target.z === z
+      && Math.max(Math.abs(target.x - x), Math.abs(target.y - y)) <= ability.radius,
+    ),
+  ];
   if (!targets.length) return;
 
   unit.ce -= ability.ceCost;
@@ -1555,11 +1687,17 @@ function placeSupernova(unit, ability, x, y, z) {
 }
 
 function detonateSupernova(unit, orb, ability, reason = "activa") {
-  const targets = livingUnits().filter((target) =>
-    target.team !== unit.team
-    && target.z === orb.z
-    && Math.max(Math.abs(target.x - orb.x), Math.abs(target.y - orb.y)) <= ability.radius,
-  );
+  const targets = [
+    ...livingUnits().filter((target) =>
+      target.team !== unit.team
+      && target.z === orb.z
+      && Math.max(Math.abs(target.x - orb.x), Math.abs(target.y - orb.y)) <= ability.radius,
+    ),
+    ...state.terrainObjects.filter((target) =>
+      target.z === orb.z
+      && Math.max(Math.abs(target.x - orb.x), Math.abs(target.y - orb.y)) <= ability.radius,
+    ),
+  ];
 
   state.supernovas = state.supernovas.filter((entry) => entry.id !== orb.id);
   setAbilityCooldown(unit, ability);
@@ -1677,9 +1815,8 @@ function confirmTransfer() {
 function changeLevel(direction) {
   const unit = currentUnit();
   if (!unit || unit.hp <= 0 || state.gameOver) return;
-  const stair = stairAt(unit.x, unit.y, unit.z);
   const nextZ = unit.z + direction;
-  if (!stair || !stair.levels.includes(nextZ) || unitAt(unit.x, unit.y, nextZ)) return;
+  if (!canChangeLevel(unit, direction)) return;
 
   unit.z = nextZ;
   unit.moved = true;

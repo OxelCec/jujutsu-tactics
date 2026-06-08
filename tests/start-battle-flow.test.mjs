@@ -91,6 +91,9 @@ test("can select both teams, choose the map, and start a battle", async () => {
   assert.equal(document.querySelectorAll(".unit.image-model, .unit img").length, 0);
   assert.equal(document.querySelectorAll(".unit.blue-unit").length, 2);
   assert.equal(document.querySelectorAll(".unit.red-unit").length, 2);
+  assert.equal(document.querySelectorAll(".terrain-object").length, 5);
+  assert.equal(document.querySelectorAll(".terrain-object.pillar").length, 2);
+  assert.equal(document.querySelectorAll(".tile.hole").length, 2);
   assert.equal(document.querySelectorAll(".finger-token").length, 7);
   assert.match(document.querySelector("#teamList").textContent, /Equipo rojo/);
   assert.match(document.querySelector("#teamList").textContent, /Equipo azul/);
@@ -105,6 +108,75 @@ test("can select both teams, choose the map, and start a battle", async () => {
   assert.match(document.querySelector("#unitCard").textContent, /habilidades/);
   assert.doesNotMatch(document.querySelector("#unitCard").textContent, /Velocidad\d+\/100/);
   assert.match(document.querySelector("#log").textContent, /Empieza la batalla/);
+
+  dom.window.close();
+});
+
+test("map terrain blocks movement, can be destroyed, and holes allow one-way descent", async () => {
+  const dom = await loadGame();
+  const { document } = dom.window;
+  startMiwaMirrorBattle(document);
+
+  dom.window.eval(`
+    stopInitiativeClock();
+    const miwa = livingUnits().find((unit) => unit.team === "blue");
+    selectNextTurn([miwa]);
+    miwa.x = 3;
+    miwa.y = 4;
+    miwa.z = 1;
+    calculateRanges();
+  `);
+
+  assert.equal(dom.window.eval('terrainObjectAt(4, 4, 1).type'), "cube");
+  assert.equal(dom.window.eval('Boolean(solidTerrainAt(4, 4, 1))'), true);
+  assert.equal(document.querySelectorAll(".terrain-object").length, 5);
+
+  dom.window.eval("handleTileClick(4, 4, 1)");
+  assert.equal(dom.window.eval("currentUnit().x"), 3);
+  assert.equal(dom.window.eval("currentUnit().y"), 4);
+  dom.window.eval("handleTileClick(5, 4, 1)");
+  assert.equal(dom.window.eval("currentUnit().x"), 3);
+  assert.equal(dom.window.eval("currentUnit().y"), 4);
+
+  dom.window.eval(`
+    for (let hit = 0; hit < 3; hit += 1) {
+      const cube = terrainObjectAt(4, 4, 1);
+      currentUnit().acted = false;
+      currentUnit().moved = false;
+      calculateRanges();
+      useOffense(cube);
+    }
+    currentUnit().acted = false;
+    currentUnit().moved = false;
+    calculateRanges();
+    handleTileClick(4, 4, 1);
+  `);
+  assert.equal(dom.window.eval("terrainObjectAt(4, 4, 1)"), undefined);
+  assert.equal(dom.window.eval("currentUnit().x"), 4);
+  assert.equal(dom.window.eval("currentUnit().y"), 4);
+
+  dom.window.eval(`
+    const miwa = currentUnit();
+    miwa.x = 3;
+    miwa.y = 3;
+    miwa.z = 1;
+    miwa.moved = false;
+    calculateRanges();
+    changeLevel(-1);
+  `);
+  assert.equal(dom.window.eval("currentUnit().z"), 0);
+  assert.equal(dom.window.eval("canChangeLevel(currentUnit(), 1)"), false);
+
+  dom.window.eval(`
+    const miwa = currentUnit();
+    miwa.x = 2;
+    miwa.y = 5;
+    miwa.z = 0;
+    const pillar = terrainObjectAt(3, 5, 0);
+    performAttack(miwa, pillar, "ataque de prueba", { attackMultiplier: 10, triggersCounterattack: false });
+  `);
+  assert.equal(dom.window.eval("terrainObjectAt(3, 5, 0)"), undefined);
+  assert.equal(dom.window.eval("Boolean(holeAt(3, 5, 1))"), true);
 
   dom.window.close();
 });
@@ -396,8 +468,19 @@ test("Choso starts in Blood Mode, attacks at range, applies Poison, and poison t
   `);
 
   assert.equal(dom.window.eval('livingUnits().find((unit) => unit.team === "red").poisonStacks'), 1);
+  assert.equal(dom.window.eval('livingUnits().find((unit) => unit.team === "red").poisonTurnsRemaining'), 1);
   assert.equal(dom.window.eval('livingUnits().find((unit) => unit.team === "red").hp'), 25);
   assert.match(document.querySelector("#log").textContent, /Veneno/);
+
+  dom.window.eval(`
+    const target = currentUnit();
+    selectNextTurn([target]);
+  `);
+
+  assert.equal(dom.window.eval("currentUnit().poisonStacks"), 0);
+  assert.equal(dom.window.eval("currentUnit().poisonTurnsRemaining"), 0);
+  assert.equal(dom.window.eval("currentUnit().hp"), 21);
+  assert.match(document.querySelector("#log").textContent, /se disipa/);
 
   dom.window.close();
 });
