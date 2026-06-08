@@ -143,6 +143,7 @@ function createBattleUnit(character, team, index) {
     attackedThisTurn: false,
     abilityCooldowns: {},
     activeEffects: {},
+    statuses: [...(character.statuses ?? [])],
     defeated: false,
     initiative: 0,
     acted: false,
@@ -501,21 +502,81 @@ function holeAt(x, y, z) {
   return state.holes.find((hole) => hole.x === x && hole.y === y && hole.z === z);
 }
 
+function hasStatus(unit, status) {
+  return unit?.statuses?.includes(status);
+}
+
+function isFlying(unit) {
+  return hasStatus(unit, "volador") || hasStatus(unit, "flying");
+}
+
+function isAdjacent4To(x, y, targetX, targetY) {
+  return Math.abs(x - targetX) + Math.abs(y - targetY) === 1;
+}
+
+function canOccupyTile(unit, x, y, z) {
+  if (x < 0 || x >= SIZE || y < 0 || y >= SIZE || z < 0 || z >= LEVELS) return false;
+  const occupant = unitAt(x, y, z);
+  if (occupant && occupant.id !== unit.id) return false;
+  if (solidTerrainAt(x, y, z)) return false;
+  if (holeAt(x, y, z) && !isFlying(unit)) return false;
+  return true;
+}
+
 function addHole(x, y, z) {
   if (z <= 0 || z >= LEVELS || holeAt(x, y, z)) return;
   state.holes.push({ id: `hole-${Date.now()}-${state.holes.length}`, x, y, z });
   addLog(`Se abre un agujero en ${x + 1},${y + 1}, nivel ${z + 1}.`);
 }
 
-function canChangeLevel(unit, direction) {
+function levelChangeTarget(unit, direction) {
   if (!unit) return false;
   const nextZ = unit.z + direction;
-  if (nextZ < 0 || nextZ >= LEVELS) return false;
-  if (unitAt(unit.x, unit.y, nextZ) || solidTerrainAt(unit.x, unit.y, nextZ)) return false;
+  if (nextZ < 0 || nextZ >= LEVELS) return null;
 
   const stair = stairAt(unit.x, unit.y, unit.z);
-  if (stair?.levels.includes(nextZ)) return true;
-  return direction < 0 && Boolean(holeAt(unit.x, unit.y, unit.z));
+  if (stair?.levels.includes(nextZ) && canOccupyTile(unit, unit.x, unit.y, nextZ)) {
+    return { x: unit.x, y: unit.y, z: nextZ, type: "stairs" };
+  }
+
+  if (direction < 0) {
+    if (isFlying(unit) && holeAt(unit.x, unit.y, unit.z) && canOccupyTile(unit, unit.x, unit.y, nextZ)) {
+      return { x: unit.x, y: unit.y, z: nextZ, type: "hole" };
+    }
+
+    const adjacentHole = state.holes.find((hole) =>
+      hole.z === unit.z
+      && isAdjacent4To(unit.x, unit.y, hole.x, hole.y)
+      && canOccupyTile(unit, hole.x, hole.y, nextZ),
+    );
+    if (adjacentHole) return { x: adjacentHole.x, y: adjacentHole.y, z: nextZ, type: "hole" };
+  }
+
+  if (direction > 0 && isFlying(unit) && holeAt(unit.x, unit.y, nextZ) && canOccupyTile(unit, unit.x, unit.y, nextZ)) {
+    return { x: unit.x, y: unit.y, z: nextZ, type: "hole" };
+  }
+
+  return null;
+}
+
+function canChangeLevel(unit, direction) {
+  return Boolean(levelChangeTarget(unit, direction));
+}
+
+function settleUnitPosition(unit) {
+  if (!unit || unit.hp <= 0 || isFlying(unit)) return;
+
+  while (unit.z > 0 && holeAt(unit.x, unit.y, unit.z)) {
+    const nextZ = unit.z - 1;
+    if (unitAt(unit.x, unit.y, nextZ) || solidTerrainAt(unit.x, unit.y, nextZ)) return;
+    unit.z = nextZ;
+    state.previewLevel = unit.z;
+    addLog(`${unit.name} cae por el agujero hasta el nivel ${unit.z + 1}.`);
+  }
+}
+
+function settleUnitsOnHoles() {
+  for (const unit of state.units) settleUnitPosition(unit);
 }
 
 function fingerPileAt(x, y, z) {
@@ -554,6 +615,7 @@ function spawnSukunaFingers() {
   const blocked = new Set([
     ...state.units.map((unit) => key(unit.x, unit.y, unit.z)),
     ...state.terrainObjects.map((object) => key(object.x, object.y, object.z)),
+    ...state.holes.map((hole) => key(hole.x, hole.y, hole.z)),
   ]);
   const piles = [];
   let attempts = 0;
@@ -960,7 +1022,7 @@ function calculateRanges() {
         const y = current.y + dy;
         const tileKey = key(x, y, unit.z);
         if (x < 0 || x >= SIZE || y < 0 || y >= SIZE || visited.has(tileKey)) continue;
-        if (unitAt(x, y, unit.z) || solidTerrainAt(x, y, unit.z)) continue;
+        if (!canOccupyTile(unit, x, y, unit.z)) continue;
         visited.add(tileKey);
         queue.push({ x, y, distance: current.distance + 1 });
       }
@@ -1005,6 +1067,7 @@ function calculateRanges() {
 }
 
 function render() {
+  settleUnitsOnHoles();
   renderBoardStack();
   renderTeamList();
   renderInitiative();
@@ -1494,13 +1557,14 @@ function handleTileClick(x, y, z) {
     }
   }
 
-  if (!unit.moved && z === unit.z && state.reachable.has(tileKey) && !terrainObject && (!occupant || occupant.id === unit.id)) {
+  if (!unit.moved && z === unit.z && state.reachable.has(tileKey) && canOccupyTile(unit, x, y, z)) {
     const from = { x: unit.x, y: unit.y, z: unit.z };
     unit.x = x;
     unit.y = y;
+    settleUnitPosition(unit);
     unit.moved = true;
-    queueVisualEvent("move", { unitId: unit.id, from, to: { x, y, z } });
-    addLog(`${unit.name} se mueve a ${x + 1},${y + 1} en nivel ${z + 1}.`);
+    queueVisualEvent("move", { unitId: unit.id, from, to: { x: unit.x, y: unit.y, z: unit.z } });
+    addLog(`${unit.name} se mueve a ${unit.x + 1},${unit.y + 1} en nivel ${unit.z + 1}.`);
     calculateRanges();
     state.selectedAction = state.attackable.size ? "attack" : "move";
     state.selectedAbilityId = null;
@@ -1651,7 +1715,12 @@ function handleUnitDefeated(unit) {
 function handleTerrainDestroyed(object) {
   state.terrainObjects = state.terrainObjects.filter((entry) => entry.id !== object.id);
   addLog(`${object.name} se rompe.`);
-  if (object.type === "pillar") addHole(object.x, object.y, object.z + 1);
+  if (object.type === "pillar") {
+    const holeZ = object.z + 1;
+    addHole(object.x, object.y, holeZ);
+    const unitAbove = unitAt(object.x, object.y, holeZ);
+    if (unitAbove) settleUnitPosition(unitAbove);
+  }
 }
 
 function tryCounterattack(defender, attacker) {
@@ -1960,16 +2029,21 @@ function confirmTransfer() {
 function changeLevel(direction) {
   const unit = currentUnit();
   if (!unit || unit.hp <= 0 || state.gameOver) return;
-  const nextZ = unit.z + direction;
-  if (!canChangeLevel(unit, direction)) return;
+  const target = levelChangeTarget(unit, direction);
+  if (!target) return;
 
-  unit.z = nextZ;
+  const from = { x: unit.x, y: unit.y, z: unit.z };
+  unit.x = target.x;
+  unit.y = target.y;
+  unit.z = target.z;
+  settleUnitPosition(unit);
   unit.moved = true;
-  state.previewLevel = nextZ;
+  state.previewLevel = unit.z;
   state.selectedAbilityId = null;
   state.abilityMenuOpen = false;
   state.pendingTransfer = null;
-  addLog(`${unit.name} cambia al nivel ${nextZ + 1}.`);
+  queueVisualEvent("move", { unitId: unit.id, from, to: { x: unit.x, y: unit.y, z: unit.z } });
+  addLog(`${unit.name} ${direction < 0 ? "baja" : "sube"} al nivel ${unit.z + 1}.`);
   calculateRanges();
   render();
 }

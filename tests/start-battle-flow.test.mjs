@@ -140,6 +140,9 @@ test("map terrain blocks movement, can be destroyed, and holes allow one-way des
   dom.window.eval("handleTileClick(5, 4, 1)");
   assert.equal(dom.window.eval("currentUnit().x"), 3);
   assert.equal(dom.window.eval("currentUnit().y"), 4);
+  dom.window.eval("handleTileClick(3, 3, 1)");
+  assert.equal(dom.window.eval("currentUnit().x"), 3);
+  assert.equal(dom.window.eval("currentUnit().y"), 4);
 
   dom.window.eval(`
     for (let hit = 0; hit < 3; hit += 1) {
@@ -161,14 +164,42 @@ test("map terrain blocks movement, can be destroyed, and holes allow one-way des
   dom.window.eval(`
     const miwa = currentUnit();
     miwa.x = 3;
-    miwa.y = 3;
+    miwa.y = 2;
     miwa.z = 1;
     miwa.moved = false;
     calculateRanges();
     changeLevel(-1);
   `);
+  assert.equal(dom.window.eval("currentUnit().x"), 3);
+  assert.equal(dom.window.eval("currentUnit().y"), 3);
   assert.equal(dom.window.eval("currentUnit().z"), 0);
   assert.equal(dom.window.eval("canChangeLevel(currentUnit(), 1)"), false);
+
+  dom.window.eval(`
+    const miwa = currentUnit();
+    miwa.x = 3;
+    miwa.y = 3;
+    miwa.z = 1;
+    settleUnitPosition(miwa);
+  `);
+  assert.equal(dom.window.eval("currentUnit().z"), 0);
+
+  dom.window.eval(`
+    const miwa = currentUnit();
+    miwa.statuses.push("volador");
+    miwa.x = 3;
+    miwa.y = 3;
+    miwa.z = 0;
+    miwa.moved = false;
+    calculateRanges();
+  `);
+  assert.equal(dom.window.eval("canChangeLevel(currentUnit(), 1)"), true);
+  dom.window.eval("changeLevel(1)");
+  assert.equal(dom.window.eval("currentUnit().z"), 1);
+  assert.equal(dom.window.eval("currentUnit().x"), 3);
+  assert.equal(dom.window.eval("currentUnit().y"), 3);
+  dom.window.eval("currentUnit().moved = false; calculateRanges(); changeLevel(-1);");
+  assert.equal(dom.window.eval("currentUnit().z"), 0);
 
   dom.window.eval(`
     const miwa = currentUnit();
