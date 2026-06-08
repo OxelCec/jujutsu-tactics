@@ -1,8 +1,8 @@
 :root {
   color-scheme: dark;
-  --bg: #161712;
-  --panel: #24251d;
-  --panel-2: #303224;
+  --bg: #111315;
+  --panel: #1d2225;
+  --panel-2: #252c31;
   --grid: #4b4f3d;
   --tile-a: #66705a;
   --tile-b: #59634f;
@@ -14,7 +14,7 @@
   --red: #df6b67;
   --text: #f0efe5;
   --muted: #bfc0ae;
-  --line: #525541;
+  --line: #46515a;
 }
 
 * {
@@ -23,7 +23,9 @@
 
 body {
   margin: 0;
-  min-height: 100vh;
+  width: 100vw;
+  height: 100vh;
+  overflow: hidden;
   font-family:
     "Courier New", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   background: var(--bg);
@@ -57,15 +59,19 @@ button:disabled {
 }
 
 .app {
-  width: min(1460px, calc(100vw - 24px));
+  width: 100vw;
+  height: 100vh;
   margin: 0 auto;
-  padding: 12px 0;
+  padding: 8px;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  gap: 8px;
+  overflow: hidden;
 }
 
 .topbar,
 .battlefield,
-.panel,
-.board-shell {
+.panel {
   border: 1px solid rgba(240, 239, 229, 0.14);
 }
 
@@ -74,10 +80,11 @@ button:disabled {
   justify-content: space-between;
   gap: 16px;
   align-items: center;
-  padding: 14px 16px;
-  background: rgba(36, 37, 29, 0.92);
+  min-height: 58px;
+  padding: 9px 14px;
+  background: rgba(29, 34, 37, 0.96);
   border-radius: 0;
-  box-shadow: 4px 4px 0 rgba(0, 0, 0, 0.32);
+  box-shadow: 3px 3px 0 rgba(0, 0, 0, 0.32);
 }
 
 h1,
@@ -86,7 +93,7 @@ p {
 }
 
 h1 {
-  font-size: 24px;
+  font-size: 22px;
   letter-spacing: 0;
 }
 
@@ -121,7 +128,8 @@ h1 {
 .setup-screen {
   display: grid;
   gap: 16px;
-  margin-top: 14px;
+  min-height: 0;
+  overflow: auto;
   padding: 18px;
   border: 1px solid rgba(240, 239, 229, 0.14);
   border-radius: 0;
@@ -201,6 +209,13 @@ button.primary {
   filter: drop-shadow(0 4px 2px rgba(0, 0, 0, 0.35));
 }
 
+.unit-preview.image-model {
+  border: 1px solid rgba(240, 239, 229, 0.22);
+  background-color: #15191b;
+  background-position: center;
+  background-size: cover;
+}
+
 .unit-preview.circle {
   border-radius: 999px;
 }
@@ -251,28 +266,61 @@ button.primary {
 }
 
 .battlefield {
+  position: relative;
   display: grid;
-  grid-template-columns: 240px minmax(520px, 1fr) 300px;
-  align-items: start;
-  gap: 12px;
-  margin-top: 12px;
-  padding: 12px;
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr) 24px;
+  grid-template-areas:
+    "board"
+    "initiative";
+  align-items: stretch;
+  column-gap: 6px;
+  row-gap: 3px;
+  min-height: 0;
+  overflow: hidden;
+  padding: 5px;
   border-radius: 0;
-  background: rgba(20, 21, 16, 0.72);
-  box-shadow: 4px 4px 0 rgba(0, 0, 0, 0.32);
+  background: rgba(13, 15, 17, 0.76);
+  box-shadow: 3px 3px 0 rgba(0, 0, 0, 0.32);
 }
 
 .panel {
   min-width: 0;
+  min-height: 0;
   border-radius: 0;
-  background: rgba(36, 37, 29, 0.96);
-  padding: 10px;
+  background: rgba(29, 34, 37, 0.97);
+  padding: 7px;
 }
 
 .roster-panel,
 .command-panel {
-  max-height: calc(100vh - 110px);
-  overflow: auto;
+  max-height: none;
+  overflow: hidden;
+  position: absolute;
+  top: 5px;
+  bottom: 32px;
+  z-index: 40;
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.34);
+}
+
+.command-panel {
+  right: 5px;
+  width: clamp(220px, 17vw, 300px);
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto auto auto auto;
+  align-content: stretch;
+  gap: 8px;
+}
+
+.command-panel .panel-title {
+  margin-bottom: 0;
+}
+
+.command-panel .commands,
+.command-panel .transfer-panel,
+.command-panel .ability-menu,
+.command-panel .tile-info {
+  margin-top: 0;
 }
 
 .panel-title {
@@ -284,18 +332,25 @@ button.primary {
 }
 
 .panel-title.small {
-  margin-top: 16px;
+  margin-top: 0;
 }
 
 .roster-panel {
+  left: 5px;
+  width: clamp(172px, 13vw, 230px);
   display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto minmax(136px, 42%);
   align-content: start;
-  gap: 12px;
+  gap: 8px;
 }
 
 .team-list {
   display: grid;
-  gap: 12px;
+  align-content: start;
+  gap: 10px;
+  min-height: 0;
+  overflow: auto;
+  padding-right: 2px;
 }
 
 .team-list-section {
@@ -366,63 +421,93 @@ button.primary {
 }
 
 .initiative-panel {
-  width: min(620px, 100%);
-  margin: 12px auto 0;
+  grid-area: initiative;
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-rows: minmax(0, 1fr);
+  border: 0;
+  background: transparent;
+}
+
+.initiative-panel .panel-title {
+  display: none;
 }
 
 .initiative-track {
   position: relative;
-  height: 86px;
+  height: 100%;
+  min-height: 18px;
   border-radius: 0;
-  overflow: hidden;
-  background:
-    linear-gradient(to right, rgba(240, 239, 229, 0.08) 0 1px, transparent 1px 25%),
-    linear-gradient(to right, rgba(85, 166, 217, 0.18), rgba(208, 173, 77, 0.12));
-  border: 1px solid var(--line);
+  overflow: visible;
+  background: transparent;
+  border: 0;
+  cursor: grab;
+  transform-origin: center center;
+  will-change: transform;
+}
+
+.initiative-track.panning {
+  cursor: grabbing;
+}
+
+.initiative-track::before {
+  content: "";
+  position: absolute;
+  left: 10px;
+  right: 10px;
+  top: 50%;
+  height: 2px;
+  background: linear-gradient(to right, rgba(85, 166, 217, 0.75), rgba(208, 173, 77, 0.78));
+  box-shadow: 0 0 8px rgba(208, 173, 77, 0.22);
+  transform: translateY(-50%);
 }
 
 .finish-marker {
   position: absolute;
-  right: 10px;
+  right: 8px;
   top: 50%;
-  width: 18px;
-  height: 18px;
+  width: 7px;
+  height: 7px;
   border-radius: 999px;
   background: #fff;
   box-shadow:
-    0 0 0 4px rgba(255, 255, 255, 0.14),
-    0 0 18px rgba(255, 255, 255, 0.32);
+    0 0 0 3px rgba(255, 255, 255, 0.12),
+    0 0 12px rgba(255, 255, 255, 0.32);
   transform: translateY(-50%);
 }
 
 .initiative-token {
   position: absolute;
-  width: 118px;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  min-height: 32px;
-  padding: 5px 8px 5px 5px;
-  border-radius: 0;
-  background: #373a2b;
-  border: 1px solid rgba(240, 239, 229, 0.18);
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border-radius: 999px;
+  background: rgba(13, 15, 17, 0.92);
+  border: 1px solid rgba(240, 239, 229, 0.36);
   transform: translate(-50%, -50%);
-  font-size: 12px;
-  font-weight: 800;
+  z-index: 1;
+  box-shadow: 0 2px 5px rgba(0, 0, 0, 0.38);
 }
 
 .initiative-token.current {
   outline: 2px solid var(--stairs);
+  outline-offset: 1px;
+  z-index: 2;
 }
 
 .initiative-portrait {
-  width: 28px;
-  height: 28px;
+  width: 18px;
+  height: 18px;
   flex: 0 0 auto;
-  border-radius: 0;
+  border-radius: 999px;
   object-fit: cover;
   background: #1d1f17;
-  border: 1px solid rgba(240, 239, 229, 0.18);
+  border: 0;
   pointer-events: none;
 }
 
@@ -433,27 +518,40 @@ button.primary {
 }
 
 .board-area {
+  grid-area: board;
   min-width: 0;
+  min-height: 0;
   display: grid;
-  align-content: start;
+  align-content: stretch;
 }
 
 .board-shell {
   border-radius: 0;
-  min-height: 630px;
+  min-height: 0;
+  height: 100%;
   overflow: visible;
-  padding: 10px;
-  background: #202219;
-  box-shadow: inset 0 0 0 4px rgba(0, 0, 0, 0.32);
+  padding: 2px;
+  display: grid;
+  place-items: center;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+  cursor: grab;
+  touch-action: none;
+}
+
+.board-shell.panning {
+  cursor: grabbing;
 }
 
 .stacked-boards {
   position: relative;
-  width: min(80vh, 100%);
-  max-width: 760px;
-  height: 590px;
+  width: min(100%, 122vh, 1320px);
+  height: min(100%, 94vh, 960px);
   margin: 0 auto;
-  --floor-gap: 36px;
+  --floor-gap: clamp(30px, 5vh, 58px);
+  transform-origin: center center;
+  will-change: transform;
 }
 
 .level-board {
@@ -464,7 +562,7 @@ button.primary {
   display: grid;
   grid-template-columns: repeat(10, minmax(24px, 1fr));
   gap: 3px;
-  width: min(62vh, 560px);
+  width: min(82vh, 100%, 960px);
   aspect-ratio: 1;
   padding: 7px;
   border: 1px solid rgba(240, 239, 229, 0.22);
@@ -641,6 +739,16 @@ button.primary {
   z-index: 3;
   pointer-events: none;
   user-select: none;
+}
+
+.unit.image-model {
+  border: 1px solid rgba(240, 239, 229, 0.28);
+  background-color: #15191b;
+  background-position: center;
+  background-size: cover;
+  box-shadow:
+    inset 0 0 0 1px rgba(0, 0, 0, 0.38),
+    0 4px 8px rgba(0, 0, 0, 0.32);
 }
 
 .level-board .unit {
@@ -837,7 +945,8 @@ button.primary {
 }
 
 .unit-card {
-  min-height: 158px;
+  min-height: 0;
+  overflow: auto;
   border-radius: 0;
   background: var(--panel-2);
   border: 1px solid var(--line);
@@ -958,6 +1067,8 @@ button.primary {
   display: grid;
   gap: 8px;
   margin-top: 8px;
+  max-height: min(220px, 24vh);
+  overflow: auto;
 }
 
 .ability-menu button {
@@ -982,6 +1093,8 @@ button.primary {
   border: 1px solid var(--line);
   border-radius: 0;
   background: rgba(20, 21, 16, 0.36);
+  max-height: min(230px, 26vh);
+  overflow: auto;
 }
 
 .tile-info h3 {
@@ -1020,7 +1133,9 @@ button.primary {
 .log {
   display: grid;
   gap: 7px;
-  max-height: clamp(190px, 24vh, 280px);
+  min-height: 0;
+  max-height: none;
+  height: 100%;
   overflow: auto;
   margin: 0;
   padding: 8px;
@@ -1040,21 +1155,38 @@ button.primary {
   overflow-wrap: anywhere;
 }
 
-@media (max-width: 980px) {
+@media (max-width: 1080px) {
   .roster-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
   .battlefield {
     grid-template-columns: 1fr;
+    grid-template-rows: minmax(0, 1fr) 24px;
+    grid-template-areas:
+      "board"
+      "initiative";
+    overflow: hidden;
+  }
+
+  .roster-panel,
+  .command-panel {
+    overflow: hidden;
+    position: absolute;
+    top: 5px;
+    bottom: 32px;
+  }
+
+  .roster-panel {
+    grid-template-rows: auto auto auto minmax(170px, auto);
   }
 
   .initiative-track {
-    height: 96px;
+    height: 20px;
   }
 
   .initiative-token {
-    width: 120px;
+    width: 22px;
     transform: translate(-50%, -50%);
   }
 
@@ -1066,17 +1198,17 @@ button.primary {
   }
 
   .board-shell {
-    min-height: 560px;
+    min-height: 0;
   }
 
   .stacked-boards {
-    width: 100%;
-    height: 520px;
-    --floor-gap: 34px;
+    width: min(100%, 116vh, 1180px);
+    height: min(100%, 92vh, 860px);
+    --floor-gap: clamp(26px, 4.4vh, 48px);
   }
 
   .level-board {
-    width: min(68vw, 430px);
+    width: min(76vh, 100%, 820px);
     transform:
       translate(-50%, -50%)
       translateY(calc((1 - var(--level-index)) * var(--floor-gap)))
@@ -1087,8 +1219,8 @@ button.primary {
 
 @media (max-width: 560px) {
   .app {
-    width: min(100vw - 16px, 1280px);
-    padding: 8px 0;
+    width: 100vw;
+    padding: 8px;
   }
 
   .topbar {
@@ -1097,7 +1229,7 @@ button.primary {
   }
 
   .battlefield {
-    padding: 8px;
+    padding: 5px;
   }
 
   .setup-screen {
@@ -1118,8 +1250,8 @@ button.primary {
   }
 
   .board-shell {
-    min-height: 430px;
-    padding: 7px;
+    min-height: 0;
+    padding: 2px;
   }
 
   .stacked-boards {

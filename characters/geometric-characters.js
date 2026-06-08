@@ -9,6 +9,19 @@ function normalStats() {
   };
 }
 
+function imageModel(src, fallbackShape = "square") {
+  return {
+    shape: fallbackShape,
+    image: src,
+    directions: {
+      north: src,
+      south: src,
+      east: src,
+      west: src,
+    },
+  };
+}
+
 const yujiStats = {
   maxHp: "bastantePoco",
   speed: "bastante",
@@ -55,7 +68,7 @@ window.GameData.characters = [
     id: "yuji",
     name: "Yuji",
     cost: 3,
-    model: { shape: "square" },
+    model: imageModel("assets/characters/yuji-itadori.png", "square"),
     statProfile: yujiStats,
     stats: window.GameData.statsFromProfile(3, yujiStats, { mobility: 3, maxCe: 100 }),
     abilityIds: ["strike", "guard"],
@@ -65,7 +78,7 @@ window.GameData.characters = [
     id: "miwa",
     name: "Miwa",
     cost: 1,
-    model: { shape: "circle" },
+    model: imageModel("assets/characters/miwa.png", "circle"),
     statProfile: normalStats(),
     stats: window.GameData.statsFromProfile(1, normalStats(), { maxCe: 50 }),
     abilityIds: ["simpleDomain", "counterattack"],
@@ -75,7 +88,7 @@ window.GameData.characters = [
     id: "choso",
     name: "Choso",
     cost: 3,
-    model: { shape: "square" },
+    model: imageModel("assets/characters/choso.png", "square"),
     statProfile: chosoStats,
     stats: window.GameData.statsFromProfile(3, chosoStats, { maxCe: 100 }),
     abilityIds: ["switchChosoStance", "piercingBlood", "supernova"],

@@ -21,6 +21,8 @@ const POISON_MAX_STACKS = 3;
 const POISON_DAMAGE_PER_STACK = 4;
 const POISON_DURATION_TURNS = 2;
 const SUPERNOVA_DURATION_TURNS = 3;
+const BOARD_MIN_ZOOM = 0.55;
+const BOARD_MAX_ZOOM = 1.85;
 let initiativeFrameId = null;
 let lastInitiativeAt = 0;
 
@@ -43,6 +45,21 @@ const state = {
   holes: [],
   terrainObjects: [],
   yujiFingerState: {},
+  boardCamera: {
+    x: 0,
+    y: 0,
+    scale: 1,
+    panning: false,
+    lastX: 0,
+    lastY: 0,
+  },
+  actionBarCamera: {
+    x: 0,
+    y: 0,
+    panning: false,
+    lastX: 0,
+    lastY: 0,
+  },
   round: 1,
   turnCount: 0,
   gameOver: false,
@@ -67,6 +84,7 @@ const setupTextEl = document.querySelector("#setupText");
 const setupContentEl = document.querySelector("#setupContent");
 const setupActionsEl = document.querySelector("#setupActions");
 const boardEl = document.querySelector("#board");
+const boardShellEl = document.querySelector(".board-shell");
 const teamListEl = document.querySelector("#teamList");
 const initiativeTrackEl = document.querySelector("#initiativeTrack");
 const phaseTextEl = document.querySelector("#phaseText");
@@ -132,6 +150,112 @@ function createBattleUnit(character, team, index) {
   };
 }
 
+function modelImageFor(entity) {
+  const model = entity?.model;
+  if (!model) return null;
+  return model.directions?.[entity.facing] ?? model.image ?? null;
+}
+
+function resetBoardCamera() {
+  state.boardCamera.x = 0;
+  state.boardCamera.y = 0;
+  state.boardCamera.scale = 1;
+  state.boardCamera.panning = false;
+  state.boardCamera.lastX = 0;
+  state.boardCamera.lastY = 0;
+  applyBoardCamera();
+}
+
+function resetActionBarCamera() {
+  state.actionBarCamera.x = 0;
+  state.actionBarCamera.y = 0;
+  state.actionBarCamera.panning = false;
+  state.actionBarCamera.lastX = 0;
+  state.actionBarCamera.lastY = 0;
+  applyActionBarCamera();
+}
+
+function applyBoardCamera() {
+  boardEl.style.transform = `translate(${state.boardCamera.x}px, ${state.boardCamera.y}px) scale(${state.boardCamera.scale})`;
+}
+
+function applyActionBarCamera() {
+  initiativeTrackEl.style.transform = `translate(${state.actionBarCamera.x}px, ${state.actionBarCamera.y}px)`;
+}
+
+function canStartBoardPan(event) {
+  if (event.button !== 0) return false;
+  return !event.target.closest(".tile, .initiative-track, .initiative-token, button, input, .panel");
+}
+
+function startBoardPan(event) {
+  if (!canStartBoardPan(event)) return;
+  state.boardCamera.panning = true;
+  state.boardCamera.lastX = event.clientX;
+  state.boardCamera.lastY = event.clientY;
+  boardShellEl.classList.add("panning");
+  event.preventDefault();
+}
+
+function moveBoardPan(event) {
+  if (!state.boardCamera.panning) return;
+  const dx = event.clientX - state.boardCamera.lastX;
+  const dy = event.clientY - state.boardCamera.lastY;
+  state.boardCamera.x += dx;
+  state.boardCamera.y += dy;
+  state.boardCamera.lastX = event.clientX;
+  state.boardCamera.lastY = event.clientY;
+  applyBoardCamera();
+}
+
+function stopBoardPan() {
+  state.boardCamera.panning = false;
+  boardShellEl.classList.remove("panning");
+}
+
+function startActionBarPan(event) {
+  if (event.button !== 0) return;
+  state.actionBarCamera.panning = true;
+  state.actionBarCamera.lastX = event.clientX;
+  state.actionBarCamera.lastY = event.clientY;
+  initiativeTrackEl.classList.add("panning");
+  event.preventDefault();
+}
+
+function moveActionBarPan(event) {
+  if (!state.actionBarCamera.panning) return;
+  const dx = event.clientX - state.actionBarCamera.lastX;
+  const dy = event.clientY - state.actionBarCamera.lastY;
+  state.actionBarCamera.x += dx;
+  state.actionBarCamera.y += dy;
+  state.actionBarCamera.lastX = event.clientX;
+  state.actionBarCamera.lastY = event.clientY;
+  applyActionBarCamera();
+}
+
+function stopActionBarPan() {
+  state.actionBarCamera.panning = false;
+  initiativeTrackEl.classList.remove("panning");
+}
+
+function zoomBoard(event) {
+  if (battlefieldEl.classList.contains("hidden")) return;
+  event.preventDefault();
+  const previousScale = state.boardCamera.scale;
+  const zoomFactor = event.deltaY < 0 ? 1.08 : 0.92;
+  const nextScale = Math.max(BOARD_MIN_ZOOM, Math.min(BOARD_MAX_ZOOM, previousScale * zoomFactor));
+  if (nextScale === previousScale) return;
+
+  const rect = boardShellEl.getBoundingClientRect();
+  const originX = event.clientX - rect.left - rect.width / 2;
+  const originY = event.clientY - rect.top - rect.height / 2;
+  const scaleRatio = nextScale / previousScale;
+  state.boardCamera.x = originX - (originX - state.boardCamera.x) * scaleRatio;
+  state.boardCamera.y = originY - (originY - state.boardCamera.y) * scaleRatio;
+  state.boardCamera.scale = nextScale;
+  applyBoardCamera();
+}
+
 function initBattle() {
   stopInitiativeClock();
   activeMap = data.maps[setup.selectedMapId];
@@ -171,6 +295,8 @@ function initBattle() {
   state.turnCount = 0;
   state.gameOver = false;
   state.log = ["Empieza la batalla."];
+  resetBoardCamera();
+  resetActionBarCamera();
   setupScreenEl.classList.add("hidden");
   battlefieldEl.classList.remove("hidden");
   advanceToNextTurn();
@@ -234,7 +360,14 @@ function renderTeamSetup(team) {
     card.addEventListener("click", () => toggleCharacter(team, character.id));
 
     const preview = document.createElement("span");
-    preview.className = `unit-preview ${character.model.shape} ${isBlue ? "blue-unit" : "red-unit"}`;
+    const previewImage = modelImageFor(character);
+    preview.className = [
+      "unit-preview",
+      character.model.shape,
+      isBlue ? "blue-unit" : "red-unit",
+      previewImage ? "image-model" : "",
+    ].filter(Boolean).join(" ");
+    if (previewImage) preview.style.backgroundImage = `url("${previewImage}")`;
 
     const name = document.createElement("strong");
     name.textContent = character.name;
@@ -944,6 +1077,7 @@ function inspectUnit(unitId) {
 
 function renderBoardStack() {
   boardEl.innerHTML = "";
+  applyBoardCamera();
   const unit = currentUnit();
   const turnLevel = unit?.z ?? 0;
   const previewLevel = state.previewLevel;
@@ -1036,7 +1170,16 @@ function renderTile(x, y, z) {
 
 function renderUnit(unit, extraClass = "") {
   const el = document.createElement("span");
-  el.className = `unit ${unit.shape} ${unit.team}-unit ${unit.hp <= 0 ? "dead-unit" : ""} ${extraClass}`.trim();
+  const image = modelImageFor(unit);
+  el.className = [
+    "unit",
+    unit.shape,
+    unit.team ? `${unit.team}-unit` : "",
+    image ? "image-model" : "",
+    unit.hp <= 0 ? "dead-unit" : "",
+    extraClass,
+  ].filter(Boolean).join(" ");
+  if (image) el.style.backgroundImage = `url("${image}")`;
   el.title = unit.name;
   return el;
 }
@@ -1049,6 +1192,9 @@ function renderTerrainObject(object) {
 }
 
 function portraitUrl(unit) {
+  const image = modelImageFor(unit);
+  if (image) return image;
+
   const color = unit.team === "blue" ? "#55a6d9" : "#df6b67";
   const shape = {
     circle: `<circle cx="32" cy="32" r="18" fill="${color}" />`,
@@ -1069,6 +1215,7 @@ function portraitUrl(unit) {
 
 function renderInitiative() {
   initiativeTrackEl.innerHTML = '<span class="finish-marker" aria-hidden="true"></span>';
+  applyActionBarCamera();
 
   for (const unit of turnEligibleUnits()) {
     const token = document.createElement("div");
@@ -1083,10 +1230,8 @@ function renderInitiative() {
     portrait.alt = "";
     portrait.draggable = false;
 
-    const name = document.createElement("span");
-    name.textContent = unit.name;
-
-    token.append(portrait, name);
+    token.title = unit.name;
+    token.append(portrait);
     initiativeTrackEl.append(token);
   }
 }
@@ -1876,6 +2021,13 @@ cancelTransferBtn.addEventListener("click", () => {
 });
 endBtn.addEventListener("click", advanceToNextTurn);
 restartBtn.addEventListener("click", initBattle);
+boardShellEl.addEventListener("mousedown", startBoardPan);
+initiativeTrackEl.addEventListener("mousedown", startActionBarPan);
+window.addEventListener("wheel", zoomBoard, { passive: false });
+window.addEventListener("mousemove", moveBoardPan);
+window.addEventListener("mousemove", moveActionBarPan);
+window.addEventListener("mouseup", stopBoardPan);
+window.addEventListener("mouseup", stopActionBarPan);
 window.addEventListener("keydown", (event) => {
   if (event.key === "ArrowUp") {
     event.preventDefault();

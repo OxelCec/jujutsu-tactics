@@ -88,7 +88,10 @@ test("can select both teams, choose the map, and start a battle", async () => {
   assert.equal(document.querySelectorAll(".level-board").length, 3);
   assert.equal(document.querySelectorAll(".tile").length, 300);
   assert.equal(document.querySelectorAll(".unit").length, 4);
-  assert.equal(document.querySelectorAll(".unit.image-model, .unit img").length, 0);
+  assert.equal(document.querySelectorAll(".unit.image-model").length, 4);
+  assert.match(document.querySelector("#teamList").innerHTML, /yuji-itadori\.png/);
+  assert.match(document.querySelector("#teamList").innerHTML, /miwa\.png/);
+  assert.match(document.querySelector("#teamList").innerHTML, /choso\.png/);
   assert.equal(document.querySelectorAll(".unit.blue-unit").length, 2);
   assert.equal(document.querySelectorAll(".unit.red-unit").length, 2);
   assert.equal(document.querySelectorAll(".terrain-object").length, 5);
@@ -192,6 +195,50 @@ test("current unit stays at the end of the initiative bar", async () => {
   `);
 
   assert.equal(document.querySelector(".initiative-token.current").style.left, "94%");
+
+  dom.window.close();
+});
+
+test("board background supports pan and zoom without changing battle flow", async () => {
+  const dom = await loadGame();
+  const { document } = dom.window;
+  startMiwaMirrorBattle(document);
+
+  const board = document.querySelector("#board");
+  const tile = document.querySelector(".tile");
+  assert.match(board.getAttribute("style"), /scale\(1\)/);
+
+  dom.window.dispatchEvent(new dom.window.WheelEvent("wheel", { deltaY: -100, clientX: 0, clientY: 0, bubbles: true, cancelable: true }));
+  assert.match(board.getAttribute("style"), /scale\(1\.08\)/);
+
+  board.dispatchEvent(new dom.window.MouseEvent("mousedown", { button: 0, clientX: 100, clientY: 100, bubbles: true, cancelable: true }));
+  dom.window.dispatchEvent(new dom.window.MouseEvent("mousemove", { clientX: 130, clientY: 118, bubbles: true }));
+  dom.window.dispatchEvent(new dom.window.MouseEvent("mouseup", { bubbles: true }));
+  assert.match(board.getAttribute("style"), /translate\([^,]*30px, [^)]*18px\)/);
+
+  tile.dispatchEvent(new dom.window.MouseEvent("mousedown", { button: 0, clientX: 100, clientY: 100, bubbles: true, cancelable: true }));
+  dom.window.dispatchEvent(new dom.window.MouseEvent("mousemove", { clientX: 160, clientY: 160, bubbles: true }));
+  dom.window.dispatchEvent(new dom.window.MouseEvent("mouseup", { bubbles: true }));
+  assert.doesNotMatch(board.getAttribute("style"), /translate\([^,]*90px, [^)]*78px\)/);
+
+  dom.window.close();
+});
+
+test("initiative bar can be dragged independently from the board", async () => {
+  const dom = await loadGame();
+  const { document } = dom.window;
+  startMiwaMirrorBattle(document);
+
+  const board = document.querySelector("#board");
+  const track = document.querySelector("#initiativeTrack");
+  const initialBoardTransform = board.getAttribute("style");
+
+  track.dispatchEvent(new dom.window.MouseEvent("mousedown", { button: 0, clientX: 200, clientY: 500, bubbles: true, cancelable: true }));
+  dom.window.dispatchEvent(new dom.window.MouseEvent("mousemove", { clientX: 245, clientY: 488, bubbles: true }));
+  dom.window.dispatchEvent(new dom.window.MouseEvent("mouseup", { bubbles: true }));
+
+  assert.match(track.getAttribute("style"), /translate\(45px, -12px\)/);
+  assert.equal(board.getAttribute("style"), initialBoardTransform);
 
   dom.window.close();
 });
