@@ -71,6 +71,15 @@ test("can select both teams, choose the map, and start a battle", async () => {
   const dom = await loadGame();
   const { document } = dom.window;
 
+  assert.equal(document.querySelector("#setupTitle").textContent, "Jujutsu Tactics");
+  clickButton(document, "Wiki");
+  assert.match(document.querySelector(".wiki-tree").textContent, /Characters/);
+  assert.match(document.querySelector(".wiki-tree").textContent, /Maps/);
+  assert.match(document.querySelector(".wiki-tree").textContent, /Misc/);
+  clickButton(document, "Maps");
+  assert.match(document.querySelector(".wiki-content h3").textContent, /Maps/);
+  clickButton(document, "Back");
+
   clickButton(document, "Start Game");
   clickRosterCard(document, "Miwa");
   clickRosterCard(document, "Yuji");
@@ -102,6 +111,8 @@ test("can select both teams, choose the map, and start a battle", async () => {
   assert.match(document.querySelector("#teamList").textContent, /Red Team/);
   assert.match(document.querySelector("#teamList").textContent, /Blue Team/);
   assert.equal(document.querySelectorAll(".team-unit-button").length, 4);
+  assert.equal(document.querySelector(".roster-panel #log"), null);
+  assert.ok(document.querySelector(".roster-panel #tileInfo"));
 
   const chosoButton = [...document.querySelectorAll(".team-unit-button")].find((button) =>
     button.textContent.includes("Choso"),
@@ -109,9 +120,15 @@ test("can select both teams, choose the map, and start a battle", async () => {
   assert.ok(chosoButton, "Expected Choso in the team list");
   chosoButton.click();
   assert.equal(document.querySelector("#unitCard h2").textContent, "Choso");
+  assert.equal(document.querySelector(".roster-panel #tileInfo").classList.contains("hidden"), false);
   assert.match(document.querySelector("#unitCard").textContent, /available techniques/);
-  assert.doesNotMatch(document.querySelector("#unitCard").textContent, /Speed\d+\/100/);
+  assert.doesNotMatch(document.querySelector("#unitCard").textContent, /SPD\d+\/100/);
   assert.match(document.querySelector("#log").textContent, /The battle begins/);
+  assert.equal(document.querySelector("#logOverlay").classList.contains("hidden"), true);
+  dom.window.dispatchEvent(new dom.window.KeyboardEvent("keydown", { key: "r" }));
+  assert.equal(document.querySelector("#logOverlay").classList.contains("hidden"), false);
+  dom.window.dispatchEvent(new dom.window.KeyboardEvent("keydown", { key: "r" }));
+  assert.equal(document.querySelector("#logOverlay").classList.contains("hidden"), true);
 
   dom.window.close();
 });
@@ -1063,6 +1080,15 @@ test("Miwa has 50 CE, 30 CE skills, one-turn cooldowns, and regenerates CE on tu
   assert.equal(dom.window.eval("currentUnit().maxCe"), 50);
   assert.equal(dom.window.eval("currentUnit().ce"), 44);
   assert.match(dom.window.eval('abilityDescription(getAbility(currentUnit(), "counterattack"))'), /30 CE, CD 1/);
+  document.querySelector("#skillBtn").click();
+  const counterButton = [...document.querySelectorAll("#abilityMenu button")].find((button) =>
+    button.textContent.includes("Counterattack"),
+  );
+  assert.ok(counterButton);
+  assert.match(counterButton.textContent, /CE 30 - CD 1/);
+  assert.equal(counterButton.classList.contains("show-description"), false);
+  counterButton.dispatchEvent(new dom.window.MouseEvent("contextmenu", { bubbles: true, cancelable: true }));
+  assert.equal(counterButton.classList.contains("show-description"), true);
 
   dom.window.eval('useSelfAbility(getAbility(currentUnit(), "counterattack"))');
 
@@ -1204,8 +1230,8 @@ test("Choso starts in Blood Mode, attacks at range, applies Poison, and poison t
     stance: "blood",
     passive: "poisonedBlood",
   });
-  assert.match(document.querySelector("#unitCard").textContent, /Defense3/);
-  assert.doesNotMatch(document.querySelector("#unitCard").textContent, /Defense3\s*\(4 x0\.85\)/);
+  assert.match(document.querySelector("#unitCard").textContent, /DEF3/);
+  assert.doesNotMatch(document.querySelector("#unitCard").textContent, /DEF3\s*\(4 x0\.85\)/);
   assert.match(document.querySelector("#unitCard").textContent, /Blood Mode/);
 
   dom.window.eval(`
@@ -1413,8 +1439,8 @@ test("attack, defense, and speed scale linearly from CE", async () => {
     defense: 4,
     speed: 13,
   });
-  assert.match(document.querySelector("#unitCard").textContent, /Attack15/);
-  assert.match(document.querySelector("#unitCard").textContent, /Speed13/);
+  assert.match(document.querySelector("#unitCard").textContent, /ATK15/);
+  assert.match(document.querySelector("#unitCard").textContent, /SPD13/);
 
   dom.window.close();
 });

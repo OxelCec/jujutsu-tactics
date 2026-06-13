@@ -173,6 +173,7 @@ const setup = {
   step: "start",
   selectedTeam: "blue",
   selectedMapId: "placeholder",
+  wikiSection: "characters",
   teams: {
     blue: [],
     red: [],
@@ -194,6 +195,7 @@ const phaseTextEl = document.querySelector("#phaseText");
 const roundTextEl = document.querySelector("#roundText");
 const unitCardEl = document.querySelector("#unitCard");
 const logEl = document.querySelector("#log");
+const logOverlayEl = document.querySelector("#logOverlay");
 const attackBtn = document.querySelector("#attackBtn");
 const skillBtn = document.querySelector("#skillBtn");
 const specialBtn = document.querySelector("#specialBtn");
@@ -443,14 +445,28 @@ function renderSetupScreen() {
 
   if (setup.step === "start") {
     phaseTextEl.textContent = "Ready to prepare battle";
-    setupEyebrowEl.textContent = "Start";
+    setupEyebrowEl.textContent = "Main Menu";
     setupTitleEl.textContent = "Jujutsu Tactics";
-    setupTextEl.textContent = "Build two teams with 6 points each and enter the map.";
-    setupActionsEl.append(setupButton("Start Game", () => {
+    setupTextEl.textContent = "Choose where to go.";
+
+    const menu = document.createElement("div");
+    menu.className = "main-menu";
+    menu.append(setupButton("Start Game", () => {
       setup.step = "blue";
       setup.selectedTeam = "blue";
       renderSetupScreen();
+    }, "primary"));
+    menu.append(setupButton("Wiki", () => {
+      setup.step = "wiki";
+      setup.wikiSection = "characters";
+      renderSetupScreen();
     }));
+    setupContentEl.append(menu);
+    return;
+  }
+
+  if (setup.step === "wiki") {
+    renderWikiSetup();
     return;
   }
 
@@ -469,6 +485,47 @@ function setupButton(text, onClick, className = "") {
   button.className = className;
   button.addEventListener("click", onClick);
   return button;
+}
+
+function renderWikiSetup() {
+  const sections = [
+    { id: "characters", label: "Characters" },
+    { id: "maps", label: "Maps" },
+    { id: "misc", label: "Misc" },
+  ];
+  const active = sections.find((section) => section.id === setup.wikiSection) ?? sections[0];
+  phaseTextEl.textContent = "Wiki";
+  setupEyebrowEl.textContent = "Wiki";
+  setupTitleEl.textContent = "Jujutsu Tactics Wiki";
+  setupTextEl.textContent = "Reference material will be added later.";
+
+  const wiki = document.createElement("div");
+  wiki.className = "wiki-layout";
+
+  const tree = document.createElement("nav");
+  tree.className = "wiki-tree";
+  for (const section of sections) {
+    const button = setupButton(section.label, () => {
+      setup.wikiSection = section.id;
+      renderSetupScreen();
+    });
+    button.className = `wiki-node ${section.id === active.id ? "active" : ""}`;
+    tree.append(button);
+  }
+
+  const content = document.createElement("section");
+  content.className = "wiki-content";
+  content.innerHTML = `
+    <h3>${active.label}</h3>
+    <p>Wiki content for ${active.label.toLowerCase()} will be added later.</p>
+  `;
+
+  wiki.append(tree, content);
+  setupContentEl.append(wiki);
+  setupActionsEl.append(setupButton("Back", () => {
+    setup.step = "start";
+    renderSetupScreen();
+  }));
 }
 
 function renderTeamSetup(team) {
@@ -1737,11 +1794,7 @@ function renderTeamList() {
       portrait.draggable = false;
 
       const copy = document.createElement("span");
-      const fingerInfo = hasYujiInBattle()
-        ? ` - ${unit.sukunaFingers} fingers${isYuji(unit) ? ` - ${yujiFingerState(unit)?.consumed ?? 0} consumed` : ""}${totalFingerContributions(unit) ? ` - ${totalFingerContributions(unit)} given` : ""}`
-        : "";
-      const statusInfo = `${unit.stance ? ` - ${stanceLabel(unit)}` : ""}${unit.weapon ? ` - ${weaponName(unit.weapon)}` : ""}${isMahitoTransformed(unit) ? " - Transformed" : ""}${unit.poisonStacks ? ` - Poison ${unit.poisonStacks} (${unit.poisonTurnsRemaining})` : ""}${unit.bleedingTurnsRemaining ? ` - Bleeding ${unit.bleedingStacks || 1} (${unit.bleedingTurnsRemaining})` : ""}${unit.idleTransfigurationTurns ? ` - Mark ${unit.idleTransfigurationTurns}` : ""}`;
-      copy.innerHTML = `<strong>${unit.name}</strong><small>${unit.hp}/${unit.maxHp} HP - ${ceLabel(unit)}${statusInfo}${fingerInfo}</small>`;
+      copy.innerHTML = `<strong>${unit.name}</strong>`;
 
       button.append(portrait, copy);
       section.append(button);
@@ -1919,6 +1972,49 @@ function renderInitiative() {
   }
 }
 
+function percent(value, max) {
+  if (!max) return 100;
+  return Math.max(0, Math.min(100, (value / max) * 100));
+}
+
+function resourceBar(label, value, max, className) {
+  const text = max > 0 ? `${value}/${max}` : "No CE";
+  return `
+    <div class="resource-bar ${className}">
+      <span style="width:${percent(value, max)}%"></span>
+      <strong>${label}</strong>
+      <em>${text}</em>
+    </div>
+  `;
+}
+
+function specialRows(displayUnit, activeUnit) {
+  const rows = [];
+  const passive = getPassive(displayUnit);
+  const locks = Object.entries(displayUnit.weaponLocks ?? {})
+    .filter(([, turns]) => turns > 0)
+    .map(([weaponId, turns]) => `${weaponName(weaponId)} ${turns}T`);
+
+  if (displayUnit.id !== activeUnit?.id && activeUnit) rows.push(["Turn", activeUnit.name]);
+  if (passive) rows.push(["Passive", passive.name]);
+  if (displayUnit.stance) rows.push(["Stance", stanceLabel(displayUnit)]);
+  if (displayUnit.weapon) rows.push(["Weapon", weaponName(displayUnit.weapon)]);
+  if (locks.length) rows.push(["Locks", locks.join(", ")]);
+  if (displayUnit.poisonStacks) rows.push(["Poison", `${displayUnit.poisonStacks}/${POISON_MAX_STACKS} - ${displayUnit.poisonTurnsRemaining}T`]);
+  if (displayUnit.bleedingTurnsRemaining) rows.push(["Bleeding", `${displayUnit.bleedingStacks || 1} - ${displayUnit.bleedingTurnsRemaining}T`]);
+  if (displayUnit.idleTransfigurationTurns) rows.push(["Mark", `${displayUnit.idleTransfigurationTurns}T`]);
+  if (displayUnit.focus !== null) rows.push(["Focus", `${displayUnit.focus}/5`]);
+  if (isMahito(displayUnit)) rows.push(["Black Flash", `${displayUnit.mahitoBlackFlashes}/2`]);
+  if (isMahitoTransformed(displayUnit)) rows.push(["Form", "Transformed"]);
+  if (hasYujiInBattle()) {
+    rows.push(["Fingers", displayUnit.sukunaFingers]);
+    rows.push(["Given", totalFingerContributions(displayUnit)]);
+    if (isYuji(displayUnit)) rows.push(["Consumed", yujiFingerState(displayUnit)?.consumed ?? 0]);
+  }
+
+  return rows;
+}
+
 function renderPanel() {
   const unit = currentUnit();
   const displayUnit = inspectedUnit() ?? unit;
@@ -1932,42 +2028,39 @@ function renderPanel() {
     return;
   }
 
-  const abilities = getAbilities(displayUnit);
   phaseTextEl.textContent = state.awaitingSharedActor
     ? `${turnController().team === "blue" ? "Blue" : "Red"} chooses who acts.`
     : unit
     ? `${unit.team === "blue" ? "Blue" : "Red"} acts with ${unit.name}.`
     : state.gameOver ? "Battle finished" : "Calculating turn";
+  const abilities = getAbilities(displayUnit);
+  const specialItems = specialRows(displayUnit, unit);
+  const teamName = displayUnit.team === "blue" ? "Blue" : "Red";
   unitCardEl.innerHTML = `
-    <h2>${displayUnit.name}</h2>
-    <div class="stat-grid">
-      <div class="stat"><strong>Team</strong>${displayUnit.team === "blue" ? "Blue" : "Red"}</div>
-      <div class="stat"><strong>Floor</strong>${displayUnit.z + 1}</div>
-      <div class="stat"><strong>HP</strong>${displayUnit.hp}/${displayUnit.maxHp}</div>
-      <div class="stat"><strong>CE</strong>${ceLabel(displayUnit)}</div>
-      <div class="stat"><strong>Attack</strong>${effectiveAttack(displayUnit)}</div>
-      <div class="stat"><strong>Defense</strong>${defenseLabel(displayUnit)}</div>
-      <div class="stat"><strong>Mobility</strong>${displayUnit.mobility}</div>
-      <div class="stat"><strong>Speed</strong>${effectiveSpeed(displayUnit)}</div>
-      ${displayUnit.stance ? `<div class="stat"><strong>Stance</strong>${stanceLabel(displayUnit)}</div>` : ""}
-      ${displayUnit.weapon ? `<div class="stat"><strong>Weapon</strong>${weaponName(displayUnit.weapon)}</div>` : ""}
-      ${displayUnit.poisonStacks ? `<div class="stat"><strong>Poison</strong>${displayUnit.poisonStacks}/${POISON_MAX_STACKS} - ${displayUnit.poisonTurnsRemaining}t</div>` : ""}
-      ${displayUnit.bleedingTurnsRemaining ? `<div class="stat"><strong>Bleeding</strong>${displayUnit.bleedingStacks || 1} - ${displayUnit.bleedingTurnsRemaining}t</div>` : ""}
-      ${displayUnit.idleTransfigurationTurns ? `<div class="stat"><strong>Mark</strong>${displayUnit.idleTransfigurationTurns}t</div>` : ""}
-      ${displayUnit.focus !== null ? `<div class="stat"><strong>Focus</strong>${displayUnit.focus}/5</div>` : ""}
-      ${isMahito(displayUnit) ? `<div class="stat"><strong>Black Flash</strong>${displayUnit.mahitoBlackFlashes}/2</div>` : ""}
-      ${isMahitoTransformed(displayUnit) ? `<div class="stat"><strong>Form</strong>Transformed</div>` : ""}
-      ${hasYujiInBattle() ? `<div class="stat"><strong>Fingers</strong>${displayUnit.sukunaFingers}</div>` : ""}
-      ${hasYujiInBattle() ? `<div class="stat"><strong>Given</strong>${totalFingerContributions(displayUnit)}</div>` : ""}
-      ${hasYujiInBattle() && isYuji(displayUnit) ? `<div class="stat"><strong>Consumed</strong>${yujiFingerState(displayUnit)?.consumed ?? 0}</div>` : ""}
+    <div class="unit-card-header">
+      <div>
+        <h2>${displayUnit.name}</h2>
+        <p>${teamName} - Floor ${displayUnit.z + 1}${displayUnit.hp <= 0 ? " - Defeated" : ""}</p>
+      </div>
+      <img class="unit-card-model" src="${portraitUrl(displayUnit)}" alt="" draggable="false" />
     </div>
-    ${displayUnit.id !== unit?.id && unit ? `<div class="ability-line">Current turn: ${unit.name}</div>` : ""}
-    ${getPassive(displayUnit) ? `<div class="ability-line">Passive: ${getPassive(displayUnit).name}</div>` : ""}
-    ${displayUnit.stance ? `<div class="ability-line">${displayUnit.stance === "blood" ? "Ranged basic attack, applies Poison." : "Improved melee basic attack, higher defense."}</div>` : ""}
-    ${isMahitoTransformed(displayUnit) ? `<div class="ability-line">Transformed basic attack: applies Bleeding.</div>` : ""}
-    ${displayUnit.weapon ? `<div class="ability-line">Equipped weapon: ${weaponName(displayUnit.weapon)}${Object.entries(displayUnit.weaponLocks ?? {}).length ? ` - Locks: ${Object.entries(displayUnit.weaponLocks).map(([weaponId, turns]) => `${weaponName(weaponId)} ${turns}t`).join(", ")}` : ""}</div>` : ""}
-    <div class="ability-line">${abilities.length} available technique${abilities.length === 1 ? "" : "s"}</div>
-    <div class="ability-list">${abilities.map((ability) => `<div><strong>${ability.name}</strong><span>${abilityDescription(ability)}</span></div>`).join("")}</div>
+    <div class="resource-stack">
+      <div class="resource-row">
+        ${resourceBar("HP", displayUnit.hp, displayUnit.maxHp, "hp-resource")}
+        <div class="mov-pill">MOV ${displayUnit.mobility}</div>
+      </div>
+      <div class="resource-row">
+        ${resourceBar("CE", displayUnit.ce, displayUnit.maxCe, "ce-resource")}
+      </div>
+    </div>
+    <div class="stat-grid">
+      <div class="stat"><strong>ATK</strong><span>${effectiveAttack(displayUnit)}</span></div>
+      <div class="stat"><strong>DEF</strong><span>${defenseLabel(displayUnit)}</span></div>
+      <div class="stat"><strong>SPD</strong><span>${effectiveSpeed(displayUnit)}</span></div>
+    </div>
+    ${specialItems.length ? `<div class="special-grid">${specialItems.map(([label, value]) => `<div><strong>${label}</strong><span>${value}</span></div>`).join("")}</div>` : ""}
+    <div class="technique-summary">${abilities.length} available technique${abilities.length === 1 ? "" : "s"}</div>
+    <div class="ability-list">${abilities.map((ability) => `<div><strong>${ability.name}</strong></div>`).join("")}</div>
   `;
 
   if (!unit) {
@@ -2017,6 +2110,58 @@ function renderTransferPanel(unit) {
   if (!transferAmountInput.value) transferAmountInput.value = String(unit.sukunaFingers);
 }
 
+function abilityCostLine(ability, cooldown, lockedWeaponTurns, activeSupernova) {
+  if (activeSupernova) return `CE 0 - CD 0 - Free ${activeSupernova.remainingTurns}T`;
+  const parts = [`CE ${ability.ceCost ?? 0}`, `CD ${ability.cooldownTurns ?? 0}`];
+  if (lockedWeaponTurns > 0) parts.push(`Locked ${lockedWeaponTurns}T`);
+  else if (cooldown > 0) parts.push(`Ready ${cooldown}T`);
+  return parts.join(" - ");
+}
+
+function bindAbilityDescriptionReveal(button) {
+  let holdTimer = null;
+  let longPressTriggered = false;
+  const showDescription = () => {
+    longPressTriggered = true;
+    button.classList.add("show-description");
+  };
+  const clearHold = () => {
+    if (holdTimer) clearTimeout(holdTimer);
+    holdTimer = null;
+  };
+
+  button.addEventListener("contextmenu", (event) => {
+    event.preventDefault();
+    button.classList.toggle("show-description");
+  });
+  button.addEventListener("mousedown", (event) => {
+    if (event.button !== 0) return;
+    longPressTriggered = false;
+    clearHold();
+    holdTimer = setTimeout(showDescription, 380);
+  });
+  button.addEventListener("mouseup", clearHold);
+  button.addEventListener("mouseleave", () => {
+    clearHold();
+    if (longPressTriggered) {
+      longPressTriggered = false;
+      button.classList.remove("show-description");
+    }
+  });
+  button.addEventListener("touchstart", () => {
+    longPressTriggered = false;
+    clearHold();
+    holdTimer = setTimeout(showDescription, 380);
+  }, { passive: true });
+  button.addEventListener("touchend", clearHold);
+  return () => {
+    if (!longPressTriggered) return false;
+    longPressTriggered = false;
+    button.classList.remove("show-description");
+    return true;
+  };
+}
+
 function renderAbilityMenu(unit, abilities) {
   abilityMenuEl.innerHTML = "";
   abilityMenuEl.classList.toggle("hidden", !state.abilityMenuOpen);
@@ -2031,15 +2176,20 @@ function renderAbilityMenu(unit, abilities) {
     const cooldown = abilityCooldown(unit, ability.id);
     const activeSupernova = ability.id === "supernova" ? activeSupernovaForUnit(unit) : null;
     const lockedWeaponTurns = ability.type === "weaponSwitch" ? weaponLock(unit, ability.weaponId) : 0;
+    const consumeLongPress = bindAbilityDescriptionReveal(button);
     button.disabled = ability.type === "weaponSwitch"
       ? state.gameOver || unit.hp <= 0 || unit.weapon === ability.weaponId || lockedWeaponTurns > 0
       : activeSupernova
       ? state.gameOver || unit.hp <= 0
       : state.gameOver || unit.acted || unit.ce < ability.ceCost || cooldown > 0;
     button.innerHTML = activeSupernova
-      ? `<strong>Detonate Supernova</strong><span>Free, ${activeSupernova.remainingTurns} turn${activeSupernova.remainingTurns === 1 ? "" : "s"}</span>`
-      : `<strong>${ability.name}</strong><span>${lockedWeaponTurns > 0 ? `Locked ${lockedWeaponTurns} turn${lockedWeaponTurns === 1 ? "" : "s"}` : cooldown > 0 ? `CD ${cooldown} turn${cooldown === 1 ? "" : "s"}` : abilityDescription(ability)}</span>`;
-    button.addEventListener("click", () => {
+      ? `<strong>Detonate Supernova</strong><span class="ability-cost-line">${abilityCostLine(ability, cooldown, lockedWeaponTurns, activeSupernova)}</span><span class="ability-description">${abilityDescription(ability)}</span>`
+      : `<strong>${ability.name}</strong><span class="ability-cost-line">${abilityCostLine(ability, cooldown, lockedWeaponTurns, activeSupernova)}</span><span class="ability-description">${abilityDescription(ability)}</span>`;
+    button.addEventListener("click", (event) => {
+      if (consumeLongPress()) {
+        event.preventDefault();
+        return;
+      }
       if (activeSupernova) {
         activateSupernova(unit);
         return;
@@ -2088,6 +2238,12 @@ function renderLog() {
     li.textContent = entry;
     logEl.append(li);
   }
+}
+
+function toggleLogOverlay() {
+  const willOpen = logOverlayEl.classList.contains("hidden");
+  logOverlayEl.classList.toggle("hidden", !willOpen);
+  logOverlayEl.setAttribute("aria-hidden", String(!willOpen));
 }
 
 function renderTileInfo() {
@@ -3706,6 +3862,12 @@ window.addEventListener("mousemove", moveActionBarPan);
 window.addEventListener("mouseup", stopBoardPan);
 window.addEventListener("mouseup", stopActionBarPan);
 window.addEventListener("keydown", (event) => {
+  const targetTag = event.target?.tagName;
+  if (event.key.toLowerCase() === "r" && !event.metaKey && !event.ctrlKey && !event.altKey && !["INPUT", "TEXTAREA", "SELECT"].includes(targetTag)) {
+    event.preventDefault();
+    toggleLogOverlay();
+    return;
+  }
   if (event.key === "ArrowUp") {
     event.preventDefault();
     changePreviewLevel(1);

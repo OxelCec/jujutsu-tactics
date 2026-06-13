@@ -4,7 +4,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Jujutsu Tactics</title>
-    <link rel="stylesheet" href="styles.css?v=48" />
+    <link rel="stylesheet" href="styles.css?v=50" />
   </head>
   <body>
     <main class="app">
@@ -34,8 +34,8 @@
         <aside class="panel roster-panel">
           <div class="panel-title">Units</div>
           <div id="teamList" class="team-list"></div>
-          <div class="panel-title small">Battle Log</div>
-          <ol id="log" class="log" aria-live="polite"></ol>
+          <div class="panel-title small">Tile</div>
+          <div id="tileInfo" class="tile-info hidden"></div>
         </aside>
 
         <section class="board-area">
@@ -69,15 +69,24 @@
             </div>
           </div>
           <div id="abilityMenu" class="ability-menu hidden"></div>
-          <div id="tileInfo" class="tile-info hidden"></div>
         </aside>
+      </section>
+
+      <section class="log-overlay hidden" id="logOverlay" aria-hidden="true">
+        <div class="log-overlay-panel">
+          <div class="log-overlay-header">
+            <h2>Battle Log</h2>
+            <span>Press R to close</span>
+          </div>
+          <ol id="log" class="log" aria-live="polite"></ol>
+        </div>
       </section>
     </main>
 
-    <script src="maps/placeholder-map.js?v=48"></script>
-    <script src="statistics/base-statistics.js?v=48"></script>
-    <script src="abilities/basic-abilities.js?v=48"></script>
-    <script src="characters/geometric-characters.js?v=48"></script>
-    <script src="game.js?v=48"></script>
+    <script src="maps/placeholder-map.js?v=50"></script>
+    <script src="statistics/base-statistics.js?v=50"></script>
+    <script src="abilities/basic-abilities.js?v=50"></script>
+    <script src="characters/geometric-characters.js?v=50"></script>
+    <script src="game.js?v=50"></script>
   </body>
 </html>

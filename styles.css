@@ -244,6 +244,75 @@ button.primary {
   gap: 10px;
 }
 
+.main-menu {
+  display: grid;
+  gap: 10px;
+  width: min(100%, 320px);
+  margin-top: 12px;
+}
+
+.main-menu button {
+  min-height: 54px;
+  font-size: 16px;
+}
+
+.wiki-layout {
+  display: grid;
+  grid-template-columns: minmax(150px, 220px) minmax(0, 1fr);
+  gap: 12px;
+  min-height: 360px;
+}
+
+.wiki-tree,
+.wiki-content {
+  border: 1px solid var(--line);
+  background: rgba(20, 21, 16, 0.42);
+  padding: 10px;
+}
+
+.wiki-tree {
+  display: grid;
+  align-content: start;
+  gap: 7px;
+}
+
+.wiki-node {
+  position: relative;
+  min-height: 36px;
+  padding-left: 22px;
+  text-align: left;
+  box-shadow: none;
+}
+
+.wiki-node::before {
+  content: "";
+  position: absolute;
+  left: 8px;
+  top: -8px;
+  bottom: 50%;
+  width: 8px;
+  border-left: 1px solid rgba(240, 239, 229, 0.24);
+  border-bottom: 1px solid rgba(240, 239, 229, 0.24);
+}
+
+.wiki-node:first-child::before {
+  top: 50%;
+}
+
+.wiki-node.active {
+  background: #4c5137;
+  border-color: var(--stairs);
+}
+
+.wiki-content h3 {
+  margin: 0 0 8px;
+  font-size: 20px;
+}
+
+.wiki-content p {
+  color: var(--muted);
+}
+
 .selection-summary {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -305,11 +374,11 @@ button.primary {
 
 .command-panel {
   right: 5px;
-  width: clamp(220px, 17vw, 300px);
+  width: clamp(250px, 19vw, 330px);
   display: grid;
-  grid-template-rows: auto minmax(0, 1fr) auto auto auto auto;
+  grid-template-rows: auto auto auto auto minmax(0, 1fr);
   align-content: stretch;
-  gap: 8px;
+  gap: 6px;
 }
 
 .command-panel .panel-title {
@@ -337,25 +406,24 @@ button.primary {
 
 .roster-panel {
   left: 5px;
-  width: clamp(172px, 13vw, 230px);
+  width: clamp(150px, 11vw, 205px);
   display: grid;
-  grid-template-rows: auto minmax(0, 1fr) auto minmax(136px, 42%);
+  grid-template-rows: auto auto auto auto;
   align-content: start;
-  gap: 8px;
+  gap: 6px;
 }
 
 .team-list {
   display: grid;
   align-content: start;
-  gap: 10px;
+  gap: 8px;
   min-height: 0;
-  overflow: auto;
-  padding-right: 2px;
+  overflow: hidden;
 }
 
 .team-list-section {
   display: grid;
-  gap: 7px;
+  gap: 4px;
 }
 
 .team-list-section h3 {
@@ -372,11 +440,11 @@ button.primary {
 
 .team-unit-button {
   display: grid;
-  grid-template-columns: 34px minmax(0, 1fr);
+  grid-template-columns: 26px minmax(0, 1fr);
   align-items: center;
-  gap: 8px;
-  min-height: 52px;
-  padding: 7px;
+  gap: 6px;
+  min-height: 32px;
+  padding: 4px 5px;
   text-align: left;
   box-shadow: none;
 }
@@ -395,8 +463,8 @@ button.primary {
 }
 
 .team-unit-button img {
-  width: 32px;
-  height: 32px;
+  width: 24px;
+  height: 24px;
   border: 1px solid rgba(240, 239, 229, 0.18);
   object-fit: cover;
   background: #1d1f17;
@@ -415,9 +483,40 @@ button.primary {
   white-space: nowrap;
 }
 
+.team-unit-button strong {
+  font-size: 12px;
+  line-height: 1.1;
+}
+
 .team-unit-button small {
   color: var(--muted);
   font-size: 11px;
+}
+
+.roster-panel .tile-info {
+  margin-top: 0;
+  max-height: none;
+  overflow: hidden;
+  padding: 7px;
+  font-size: 11px;
+}
+
+.roster-panel .tile-info h3 {
+  font-size: 12px;
+}
+
+.roster-panel .tile-info p {
+  font-size: 10px;
+}
+
+.roster-panel .inspect-grid {
+  grid-template-columns: 1fr;
+  gap: 4px;
+}
+
+.roster-panel .inspect-grid div {
+  padding: 4px 5px;
+  font-size: 10px;
 }
 
 .initiative-panel {
@@ -1044,63 +1143,202 @@ button.primary {
 
 .unit-card {
   min-height: 0;
-  overflow: auto;
+  overflow: visible;
   border-radius: 0;
   background: var(--panel-2);
   border: 1px solid var(--line);
-  padding: 12px;
+  padding: 8px;
+}
+
+.unit-card-header {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 42px;
+  align-items: center;
+  gap: 8px;
 }
 
 .unit-card h2 {
-  margin: 0 0 10px;
+  margin: 0;
   font-size: 18px;
   letter-spacing: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.unit-card-header p {
+  margin-top: 2px;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 800;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.unit-card-model {
+  width: 40px;
+  height: 40px;
+  border: 1px solid rgba(240, 239, 229, 0.24);
+  object-fit: cover;
+  background: #15191b;
+}
+
+.resource-stack {
+  display: grid;
+  gap: 5px;
+  margin-top: 8px;
+}
+
+.resource-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 6px;
+  align-items: stretch;
+}
+
+.resource-bar {
+  position: relative;
+  min-height: 22px;
+  overflow: hidden;
+  border: 1px solid rgba(240, 239, 229, 0.14);
+  background: rgba(20, 21, 16, 0.54);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 0 7px;
+  isolation: isolate;
+}
+
+.resource-bar span {
+  position: absolute;
+  inset: 0 auto 0 0;
+  z-index: -1;
+  opacity: 0.82;
+}
+
+.resource-bar strong,
+.resource-bar em {
+  font-size: 11px;
+  font-style: normal;
+  font-weight: 900;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.65);
+}
+
+.hp-resource span {
+  background: linear-gradient(90deg, #a72e2f, #df4b48);
+}
+
+.ce-resource span {
+  background: linear-gradient(90deg, #245c91, #55a6d9);
+}
+
+.mov-pill {
+  min-width: 54px;
+  min-height: 22px;
+  display: grid;
+  place-items: center;
+  border: 1px solid rgba(240, 239, 229, 0.14);
+  background: rgba(36, 37, 29, 0.86);
+  color: var(--text);
+  font-size: 11px;
+  font-weight: 900;
 }
 
 .stat-grid {
   display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 8px;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 5px;
+  margin-top: 8px;
 }
 
 .stat {
   min-width: 0;
   border-radius: 0;
-  padding: 8px;
+  padding: 6px 5px;
   background: rgba(20, 21, 16, 0.35);
+  border: 1px solid rgba(240, 239, 229, 0.08);
+  text-align: center;
 }
 
 .stat strong {
   display: block;
-  font-size: 12px;
+  font-size: 11px;
   color: var(--muted);
 }
 
-.ability-line {
+.stat span {
+  display: block;
+  margin-top: 2px;
+  font-size: 15px;
+  font-weight: 900;
+}
+
+.special-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 5px;
   margin-top: 10px;
-  padding-top: 10px;
+  padding-top: 8px;
   border-top: 1px solid rgba(240, 239, 229, 0.12);
+}
+
+.special-grid div {
+  min-width: 0;
+  padding: 5px 6px;
+  border: 1px solid rgba(240, 239, 229, 0.08);
+  background: rgba(20, 21, 16, 0.34);
+}
+
+.special-grid strong,
+.special-grid span {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.special-grid strong {
   color: var(--muted);
-  font-size: 13px;
-  font-weight: 700;
+  font-size: 10px;
+  text-transform: uppercase;
+}
+
+.special-grid span {
+  margin-top: 2px;
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.technique-summary {
+  margin-top: 8px;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 800;
+  text-transform: uppercase;
 }
 
 .ability-list {
   display: grid;
-  gap: 6px;
-  margin-top: 10px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 5px;
+  margin-top: 5px;
 }
 
 .ability-list div {
   min-width: 0;
-  padding: 7px 8px;
+  padding: 5px 6px;
   border: 1px solid rgba(240, 239, 229, 0.08);
   background: rgba(20, 21, 16, 0.35);
 }
 
 .ability-list strong {
   display: block;
-  font-size: 12px;
+  font-size: 10px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .ability-list span {
@@ -1113,20 +1351,27 @@ button.primary {
 
 .commands {
   display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 8px;
-  margin-top: 12px;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 5px;
+  margin-top: 0;
+}
+
+.commands button {
+  min-height: 28px;
+  padding: 4px 5px;
+  font-size: 11px;
+  box-shadow: 2px 2px 0 rgba(0, 0, 0, 0.38);
 }
 
 .commands button:last-child {
-  grid-column: span 2;
+  grid-column: auto;
 }
 
 .transfer-panel {
   display: grid;
-  gap: 8px;
-  margin-top: 10px;
-  padding: 10px;
+  gap: 6px;
+  margin-top: 0;
+  padding: 7px;
   border: 1px solid rgba(208, 173, 77, 0.55);
   background: rgba(20, 21, 16, 0.58);
 }
@@ -1140,13 +1385,13 @@ button.primary {
 
 .transfer-controls {
   display: grid;
-  grid-template-columns: 74px 1fr 1fr;
-  gap: 8px;
+  grid-template-columns: 58px 1fr 1fr;
+  gap: 5px;
 }
 
 .transfer-controls input {
   min-width: 0;
-  min-height: 38px;
+  min-height: 30px;
   border: 1px solid var(--line);
   border-radius: 0;
   padding: 7px;
@@ -1163,24 +1408,40 @@ button.primary {
 
 .ability-menu {
   display: grid;
-  gap: 8px;
-  margin-top: 8px;
-  max-height: min(220px, 24vh);
+  gap: 5px;
+  margin-top: 0;
+  max-height: min(230px, 29vh);
   overflow: auto;
 }
 
 .ability-menu button {
   display: grid;
   justify-items: start;
-  gap: 3px;
-  min-height: 50px;
-  padding: 8px 10px;
+  gap: 2px;
+  min-height: 38px;
+  padding: 6px 7px;
   text-align: left;
 }
 
 .ability-menu span {
   color: var(--muted);
-  font-size: 12px;
+  font-size: 10px;
+  line-height: 1.25;
+}
+
+.ability-cost-line {
+  color: #d0d2c2;
+  font-weight: 900;
+}
+
+.ability-description {
+  display: none;
+  padding-top: 3px;
+  border-top: 1px solid rgba(240, 239, 229, 0.1);
+}
+
+.ability-menu button.show-description .ability-description {
+  display: block;
 }
 
 .tile-info {
@@ -1251,6 +1512,50 @@ button.primary {
   border: 1px solid rgba(240, 239, 229, 0.08);
   background: rgba(36, 37, 29, 0.72);
   overflow-wrap: anywhere;
+}
+
+.log-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+  display: grid;
+  padding: 20px;
+  background: rgba(5, 7, 8, 0.88);
+}
+
+.log-overlay-panel {
+  min-height: 0;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  gap: 12px;
+  border: 1px solid rgba(240, 239, 229, 0.18);
+  background: rgba(29, 34, 37, 0.98);
+  padding: 14px;
+  box-shadow: 6px 6px 0 rgba(0, 0, 0, 0.42);
+}
+
+.log-overlay-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.log-overlay-header h2 {
+  margin: 0;
+  font-size: 22px;
+}
+
+.log-overlay-header span {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.log-overlay .log {
+  height: 100%;
+  font-size: 15px;
 }
 
 @media (max-width: 1080px) {
