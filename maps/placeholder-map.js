@@ -17,11 +17,11 @@ window.GameData.maps = {
       { id: "hole-2", x: 6, y: 7, z: 2 },
     ],
     terrainObjects: [
-      { id: "cube-1", type: "cube", name: "Cubo", x: 4, y: 4, z: 1, maxHp: 30 },
-      { id: "cube-2", type: "cube", name: "Cubo", x: 5, y: 2, z: 0, maxHp: 30 },
-      { id: "cube-3", type: "cube", name: "Cubo", x: 5, y: 7, z: 2, maxHp: 30 },
-      { id: "pillar-1", type: "pillar", name: "Pilar", x: 3, y: 5, z: 0, maxHp: 40 },
-      { id: "pillar-2", type: "pillar", name: "Pilar", x: 6, y: 4, z: 1, maxHp: 40 },
+      { id: "cube-1", type: "cube", name: "Cube", x: 4, y: 4, z: 1, maxHp: 30 },
+      { id: "cube-2", type: "cube", name: "Cube", x: 5, y: 2, z: 0, maxHp: 30 },
+      { id: "cube-3", type: "cube", name: "Cube", x: 5, y: 7, z: 2, maxHp: 30 },
+      { id: "pillar-1", type: "pillar", name: "Pillar", x: 3, y: 5, z: 0, maxHp: 40 },
+      { id: "pillar-2", type: "pillar", name: "Pillar", x: 6, y: 4, z: 1, maxHp: 40 },
     ],
     spawns: {
       blue: [

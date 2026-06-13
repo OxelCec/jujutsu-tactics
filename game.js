@@ -24,10 +24,100 @@ const SUPERNOVA_DURATION_TURNS = 3;
 const BLEEDING_DAMAGE = 5;
 const BLEEDING_DURATION_TURNS = 3;
 const TOJI_WEAPON_LOCK_TURNS = 3;
+const MAHITO_IDLE_CE_DRAIN = 10;
+const MAHITO_TRANSFORM_CE = 150;
+const MAHITO_TRANSFORM_TURN_CE_LOSS = 10;
+const MAHITO_DEPLETED_STAT_MULTIPLIER = 0.5;
+const SUMMON_BASIC_CE_LOSS = 10;
+const SUMMON_DISMISS_COOLDOWN_TURNS = 2;
+const MEGUMI_MAHORAGA_TURN_REQUIREMENT = 6;
+const MEGUMI_MAHORAGA_HP_RATIO = 0.2;
+const MEGUMI_MAHORAGA_REQUIRED_MAX_CE = 150;
+const MEGUMI_MAHORAGA_REQUIRED_CE = 100;
+const MEGUMI_MAHORAGA_DAMAGE_MEMORY_TURNS = 3;
+const MEGUMI_MAHORAGA_RITUAL_RANGE = 3;
+const MAHORAGA_MAX_ADAPTATION_STACKS = 6;
+const MAHORAGA_MAX_DEFENSE_PIERCE_STACKS = 8;
+const MAHORAGA_DEFENSE_PIERCE_PER_STACK = 0.05;
 const TOJI_WEAPON_ATTACK_MULTIPLIERS = {
   invertedSpear: 0.85,
   splitSoulKatana: 1.25,
   chainWeapon: 1.08,
+};
+const MEGUMI_SUMMON_TEMPLATES = {
+  divineDogWhite: {
+    name: "Divine Dog White",
+    shape: "triangle",
+    maxHp: 46,
+    attack: 9,
+    defense: 3,
+    speed: 1,
+    mobility: 3,
+    maxCe: 30,
+    reservedCe: 30,
+    abilityIds: [],
+    damageType: "slashing",
+    summonAbilityId: "summonDivineDogs",
+    summonKind: "divineDog",
+  },
+  divineDogBlack: {
+    name: "Divine Dog Black",
+    shape: "triangle",
+    maxHp: 46,
+    attack: 9,
+    defense: 3,
+    speed: 1,
+    mobility: 3,
+    maxCe: 30,
+    reservedCe: 30,
+    abilityIds: [],
+    damageType: "slashing",
+    summonAbilityId: "summonDivineDogs",
+    summonKind: "divineDog",
+  },
+  nue: {
+    name: "Nue",
+    shape: "diamond",
+    maxHp: 46,
+    attack: 16,
+    defense: 3,
+    speed: 1,
+    mobility: 3,
+    maxCe: 20,
+    reservedCe: 20,
+    abilityIds: ["nueLightningStrike"],
+    damageType: "strike",
+    statuses: ["flying"],
+    summonAbilityId: "summonNue",
+    summonKind: "nue",
+  },
+  maxElephant: {
+    name: "Max Elephant",
+    shape: "square",
+    maxHp: 88,
+    attack: 19,
+    defense: 7,
+    speed: 1,
+    mobility: 1,
+    maxCe: 40,
+    reservedCe: 40,
+    abilityIds: [],
+    damageType: "strike",
+    summonAbilityId: "summonMaxElephant",
+    summonKind: "maxElephant",
+  },
+};
+const MAHORAGA_TEMPLATE = {
+  name: "Mahoraga",
+  shape: "triangle",
+  maxHp: 120,
+  attack: 28,
+  defense: 14,
+  speed: 16,
+  mobility: 3,
+  maxCe: 0,
+  abilityIds: ["worldCuttingSlash"],
+  damageType: "slashing",
 };
 const BOARD_MIN_ZOOM = 0.55;
 const BOARD_MAX_ZOOM = 1.85;
@@ -37,16 +127,21 @@ let lastInitiativeAt = 0;
 const state = {
   units: [],
   currentUnitId: null,
+  turnControllerId: null,
   previewLevel: 0,
   selectedAction: "move",
   selectedAbilityId: null,
   abilityMenuOpen: false,
+  awaitingSharedActor: false,
+  pendingSummon: null,
   pendingTransfer: null,
+  pendingSwap: null,
   inspectedTile: null,
   inspectedUnitId: null,
   reachable: new Set(),
   attackable: new Set(),
   abilityTargets: new Set(),
+  sharedActorTargets: new Set(),
   visualEvents: [],
   fingers: [],
   supernovas: [],
@@ -149,12 +244,32 @@ function createBattleUnit(character, team, index) {
     weaponLocks: {},
     poisonStacks: 0,
     poisonTurnsRemaining: 0,
+    bleedingStacks: 0,
     bleedingTurnsRemaining: 0,
+    idleTransfigurationTurns: 0,
+    mahitoBlackFlashes: 0,
+    mahitoUltimateUsed: false,
+    mahitoBaseStats: null,
+    megumiTurnsTaken: 0,
+    megumiDamageMemory: [],
+    mustActPersonally: false,
+    deadSummons: [],
     sukunaFingers: 0,
     attackedThisTurn: false,
     abilityCooldowns: {},
     activeEffects: {},
     statuses: [...(character.statuses ?? [])],
+    isSummon: false,
+    summonerId: null,
+    summonKind: null,
+    summonAbilityId: null,
+    reservedCe: 0,
+    sharedTurnActed: false,
+    isMahoraga: false,
+    allowedTargetIds: [],
+    adaptations: {},
+    defensePierceStacks: 0,
+    removed: false,
     defeated: false,
     initiative: 0,
     acted: false,
@@ -280,16 +395,21 @@ function initBattle() {
     }),
   );
   state.currentUnitId = null;
+  state.turnControllerId = null;
   state.previewLevel = 0;
   state.selectedAction = "move";
   state.selectedAbilityId = null;
   state.abilityMenuOpen = false;
+  state.awaitingSharedActor = false;
+  state.pendingSummon = null;
   state.pendingTransfer = null;
+  state.pendingSwap = null;
   state.inspectedTile = null;
   state.inspectedUnitId = null;
   state.reachable.clear();
   state.attackable.clear();
   state.abilityTargets.clear();
+  state.sharedActorTargets.clear();
   state.visualEvents = [];
   state.holes = (activeMap.holes ?? []).map((hole) => ({ ...hole }));
   state.terrainObjects = (activeMap.terrainObjects ?? []).map((object) => ({
@@ -306,7 +426,7 @@ function initBattle() {
   state.round = 1;
   state.turnCount = 0;
   state.gameOver = false;
-  state.log = ["Empieza la batalla."];
+  state.log = ["The battle begins."];
   resetBoardCamera();
   resetActionBarCamera();
   setupScreenEl.classList.add("hidden");
@@ -319,14 +439,14 @@ function renderSetupScreen() {
   setupScreenEl.classList.remove("hidden");
   setupContentEl.innerHTML = "";
   setupActionsEl.innerHTML = "";
-  roundTextEl.textContent = "Preparacion";
+  roundTextEl.textContent = "Preparation";
 
   if (setup.step === "start") {
-    phaseTextEl.textContent = "Listo para preparar batalla";
-    setupEyebrowEl.textContent = "Inicio";
-    setupTitleEl.textContent = "Geometria Tactics";
-    setupTextEl.textContent = "Forma dos equipos con 6 puntos cada uno y entra en el mapa.";
-    setupActionsEl.append(setupButton("Iniciar juego", () => {
+    phaseTextEl.textContent = "Ready to prepare battle";
+    setupEyebrowEl.textContent = "Start";
+    setupTitleEl.textContent = "Jujutsu Tactics";
+    setupTextEl.textContent = "Build two teams with 6 points each and enter the map.";
+    setupActionsEl.append(setupButton("Start Game", () => {
       setup.step = "blue";
       setup.selectedTeam = "blue";
       renderSetupScreen();
@@ -355,10 +475,10 @@ function renderTeamSetup(team) {
   const isBlue = team === "blue";
   const used = teamCost(team);
   const remaining = TEAM_BUDGET - used;
-  phaseTextEl.textContent = `Seleccion del equipo ${isBlue ? "Azul" : "Rojo"}`;
-  setupEyebrowEl.textContent = isBlue ? "Equipo azul" : "Equipo rojo";
-  setupTitleEl.textContent = `Elige unidades (${used}/${TEAM_BUDGET})`;
-  setupTextEl.textContent = `Puedes elegir cualquier combinacion que no pase de ${TEAM_BUDGET} puntos.`;
+  phaseTextEl.textContent = `${isBlue ? "Blue" : "Red"} team selection`;
+  setupEyebrowEl.textContent = isBlue ? "Blue Team" : "Red Team";
+  setupTitleEl.textContent = `Choose Units (${used}/${TEAM_BUDGET})`;
+  setupTextEl.textContent = `Choose any combination that does not exceed ${TEAM_BUDGET} points.`;
 
   const roster = document.createElement("div");
   roster.className = "roster-grid";
@@ -385,7 +505,7 @@ function renderTeamSetup(team) {
     name.textContent = character.name;
 
     const cost = document.createElement("span");
-    cost.textContent = `${character.cost} puntos`;
+    cost.textContent = `${character.cost} points`;
 
     card.append(preview, name, cost);
     roster.append(card);
@@ -393,13 +513,13 @@ function renderTeamSetup(team) {
   setupContentEl.append(roster);
 
   const backStep = isBlue ? "start" : "blue";
-  setupActionsEl.append(setupButton("Atras", () => {
+  setupActionsEl.append(setupButton("Back", () => {
     setup.step = backStep;
     setup.selectedTeam = backStep === "blue" ? "blue" : setup.selectedTeam;
     renderSetupScreen();
   }));
 
-  const next = setupButton(isBlue ? "Equipo rojo" : "Elegir mapa", () => {
+  const next = setupButton(isBlue ? "Red Team" : "Choose Map", () => {
     setup.step = isBlue ? "red" : "map";
     setup.selectedTeam = isBlue ? "red" : setup.selectedTeam;
     renderSetupScreen();
@@ -423,10 +543,10 @@ function toggleCharacter(team, characterId) {
 }
 
 function renderMapSetup() {
-  phaseTextEl.textContent = "Seleccion de mapa";
-  setupEyebrowEl.textContent = "Mapa";
-  setupTitleEl.textContent = "Elige escenario";
-  setupTextEl.textContent = "Por ahora solo hay un mapa disponible.";
+  phaseTextEl.textContent = "Map selection";
+  setupEyebrowEl.textContent = "Map";
+  setupTitleEl.textContent = "Choose Stage";
+  setupTextEl.textContent = "Only one map is available for now.";
 
   const mapGrid = document.createElement("div");
   mapGrid.className = "map-grid";
@@ -438,17 +558,17 @@ function renderMapSetup() {
       setup.selectedMapId = map.id;
       renderSetupScreen();
     });
-    mapButton.innerHTML = `<strong>${map.name}</strong><span>${map.size}x${map.size} - ${map.levels} pisos</span>`;
+    mapButton.innerHTML = `<strong>${map.name}</strong><span>${map.size}x${map.size} - ${map.levels} floors</span>`;
     mapGrid.append(mapButton);
   }
   setupContentEl.append(mapGrid, renderSelectionSummary());
 
-  setupActionsEl.append(setupButton("Atras", () => {
+  setupActionsEl.append(setupButton("Back", () => {
     setup.step = "red";
     setup.selectedTeam = "red";
     renderSetupScreen();
   }));
-  setupActionsEl.append(setupButton("Empezar batalla", initBattle, "primary"));
+  setupActionsEl.append(setupButton("Start Battle", initBattle, "primary"));
 }
 
 function renderSelectionSummary() {
@@ -458,7 +578,7 @@ function renderSelectionSummary() {
     const block = document.createElement("div");
     block.className = "summary-team";
     const title = document.createElement("strong");
-    title.textContent = `${team === "blue" ? "Azul" : "Rojo"}: ${teamCost(team)}/${TEAM_BUDGET}`;
+    title.textContent = `${team === "blue" ? "Blue" : "Red"}: ${teamCost(team)}/${TEAM_BUDGET}`;
     const list = document.createElement("span");
     list.textContent = setup.teams[team]
       .map((id) => data.characters.find((character) => character.id === id)?.name)
@@ -470,15 +590,19 @@ function renderSelectionSummary() {
 }
 
 function livingUnits() {
-  return state.units.filter((unit) => unit.hp > 0);
+  return state.units.filter((unit) => !unit.removed && unit.hp > 0);
 }
 
 function turnEligibleUnits() {
-  return state.units.filter((unit) => unit.hp > 0 || canDeadYujiTransform(unit));
+  return state.units.filter((unit) => !unit.removed && ((unit.hp > 0 && (!unit.isSummon || unit.isMahoraga)) || canDeadYujiTransform(unit)));
 }
 
 function currentUnit() {
   return state.units.find((unit) => unit.id === state.currentUnitId);
+}
+
+function turnController() {
+  return state.units.find((unit) => unit.id === state.turnControllerId) ?? currentUnit();
 }
 
 function inspectedUnit() {
@@ -494,11 +618,11 @@ function key(x, y, z) {
 }
 
 function unitAt(x, y, z) {
-  return state.units.find((unit) => unit.x === x && unit.y === y && unit.z === z);
+  return state.units.find((unit) => !unit.removed && unit.x === x && unit.y === y && unit.z === z);
 }
 
 function livingUnitAt(x, y, z) {
-  return livingUnits().find((unit) => unit.x === x && unit.y === y && unit.z === z);
+  return livingUnits().find((unit) => !unit.removed && unit.x === x && unit.y === y && unit.z === z);
 }
 
 function terrainObjectAt(x, y, z) {
@@ -518,7 +642,7 @@ function hasStatus(unit, status) {
 }
 
 function isFlying(unit) {
-  return hasStatus(unit, "volador") || hasStatus(unit, "flying");
+  return hasStatus(unit, "flying");
 }
 
 function isAdjacent4To(x, y, targetX, targetY) {
@@ -556,7 +680,7 @@ function setFacingToward(unit, x, y) {
 function addHole(x, y, z) {
   if (z <= 0 || z >= LEVELS || holeAt(x, y, z)) return;
   state.holes.push({ id: `hole-${Date.now()}-${state.holes.length}`, x, y, z });
-  addLog(`Se abre un agujero en ${x + 1},${y + 1}, nivel ${z + 1}.`);
+  addLog(`A hole opens at ${x + 1},${y + 1}, floor ${z + 1}.`);
 }
 
 function levelChangeTarget(unit, direction) {
@@ -601,7 +725,7 @@ function settleUnitPosition(unit) {
     if (unitAt(unit.x, unit.y, nextZ) || solidTerrainAt(unit.x, unit.y, nextZ)) return;
     unit.z = nextZ;
     state.previewLevel = unit.z;
-    addLog(`${unit.name} cae por el agujero hasta el nivel ${unit.z + 1}.`);
+    addLog(`${unit.name} falls through the hole to floor ${unit.z + 1}.`);
   }
 }
 
@@ -676,7 +800,7 @@ function consumeFingersForYuji(yuji, count, giver = null) {
   if (giver) {
     fingerState.contributions[giver.id] = (fingerState.contributions[giver.id] ?? 0) + count;
   }
-  addLog(`${yuji.name} consume ${count} dedo${count === 1 ? "" : "s"} de Sukuna (${fingerState.consumed}).`);
+  addLog(`${yuji.name} consumes ${count} Sukuna Finger${count === 1 ? "" : "s"} (${fingerState.consumed}).`);
 }
 
 function pickupFingersAtUnit(unit) {
@@ -690,13 +814,13 @@ function pickupFingersAtUnit(unit) {
     return;
   }
   unit.sukunaFingers += count;
-  addLog(`${unit.name} recoge ${count} dedo${count === 1 ? "" : "s"} de Sukuna.`);
+  addLog(`${unit.name} picks up ${count} Sukuna Finger${count === 1 ? "" : "s"}.`);
 }
 
 function dropFingersFromUnit(unit) {
   if (unit.sukunaFingers <= 0) return;
   addFingerPile(unit.x, unit.y, unit.z, unit.sukunaFingers);
-  addLog(`${unit.name} deja caer ${unit.sukunaFingers} dedo${unit.sukunaFingers === 1 ? "" : "s"} de Sukuna.`);
+  addLog(`${unit.name} drops ${unit.sukunaFingers} Sukuna Finger${unit.sukunaFingers === 1 ? "" : "s"}.`);
   unit.sukunaFingers = 0;
 }
 
@@ -729,14 +853,14 @@ function isToji(unit) {
 
 function weaponName(weaponId) {
   return {
-    invertedSpear: "Lanza invertida",
-    splitSoulKatana: "Katana alma dividida",
-    chainWeapon: "Cadena",
+    invertedSpear: "Inverted Spear of Heaven",
+    splitSoulKatana: "Split Soul Katana",
+    chainWeapon: "Chain Weapon",
   }[weaponId] ?? weaponId;
 }
 
 function ceLabel(unit) {
-  return unit.maxCe ? `${unit.ce}/${unit.maxCe}` : "Sin CE";
+  return unit.maxCe ? `${unit.ce}/${unit.maxCe}` : "No CE";
 }
 
 function weaponLock(unit, weaponId) {
@@ -746,6 +870,20 @@ function weaponLock(unit, weaponId) {
 function isAbilityAvailableForUnit(unit, ability) {
   if (!isAbilityAvailableInStance(unit, ability)) return false;
   if (ability.requiredWeapon && unit.weapon !== ability.requiredWeapon) return false;
+  if (ability.type?.startsWith("summon") && !isMegumi(unit)) return false;
+  if (ability.type?.startsWith("summon") && unit.maxCe < ability.ceCost) return false;
+  if (ability.id === "summonDivineDogs" && (hasActiveSummonKind(unit, "divineDog") || hasDeadSummonKind(unit, "divineDog"))) return false;
+  if (ability.id === "summonNue" && (hasActiveSummonKind(unit, "nue") || hasDeadSummonKind(unit, "nue"))) return false;
+  if (ability.id === "summonMaxElephant" && (hasActiveSummonKind(unit, "maxElephant") || hasDeadSummonKind(unit, "maxElephant"))) return false;
+  if (ability.type === "summonMahoraga" && !canSummonMahoraga(unit)) return false;
+  if (ability.type === "worldCuttingSlash" && !mahoragaCanUseWorldSlash(unit)) return false;
+  if (ability.requiredMahitoTransformed === true && !isMahitoTransformed(unit)) return false;
+  if (ability.requiredMahitoTransformed === false && isMahitoTransformed(unit)) return false;
+  if (ability.mahitoUltimate) {
+    if (!mahitoUltimateUnlocked(unit) || unit.mahitoUltimateUsed) return false;
+    if (ability.hpRequirement === "above70" && mahitoHpRatio(unit) <= 0.7) return false;
+    if (ability.hpRequirement === "below70" && mahitoHpRatio(unit) > 0.7) return false;
+  }
   return true;
 }
 
@@ -759,8 +897,8 @@ function isChoso(unit) {
 }
 
 function stanceLabel(unit) {
-  if (unit.stance === "blood") return "Modo sangre";
-  if (unit.stance === "combat") return "Modo combate";
+  if (unit.stance === "blood") return "Blood Mode";
+  if (unit.stance === "combat") return "Combat Mode";
   return "";
 }
 
@@ -781,6 +919,150 @@ function chosoBasicAttackMultiplier(unit, target) {
 
 function isYuji(unit) {
   return unit?.characterId === "yuji";
+}
+
+function isMahito(unit) {
+  return unit?.characterId === "mahito";
+}
+
+function isMegumi(unit) {
+  return unit?.characterId === "megumi" && !unit.isSummon;
+}
+
+function isMegumiSummon(unit) {
+  return Boolean(unit?.isSummon && unit.summonerId && !unit.isMahoraga);
+}
+
+function summonerFor(unit) {
+  return unit?.summonerId ? state.units.find((entry) => entry.id === unit.summonerId) : null;
+}
+
+function activeSummonsFor(megumi) {
+  if (!megumi) return [];
+  return state.units.filter((unit) => !unit.removed && unit.isSummon && !unit.isMahoraga && unit.summonerId === megumi.id && unit.hp > 0);
+}
+
+function hasActiveSummonKind(megumi, summonKind) {
+  return activeSummonsFor(megumi).some((unit) => unit.summonKind === summonKind);
+}
+
+function hasDeadSummonKind(megumi, summonKind) {
+  return Boolean(megumi?.deadSummons?.includes(summonKind));
+}
+
+function recentMegumiDamagers(megumi) {
+  const minTurn = Math.max(0, (megumi?.megumiTurnsTaken ?? 0) - MEGUMI_MAHORAGA_DAMAGE_MEMORY_TURNS);
+  return (megumi?.megumiDamageMemory ?? [])
+    .filter((entry) => entry.megumiTurn >= minTurn)
+    .map((entry) => state.units.find((unit) => unit.id === entry.attackerId))
+    .filter((unit) => unit && unit.hp > 0);
+}
+
+function mahoragaRitualTargets(megumi) {
+  return recentMegumiDamagers(megumi).filter((enemy) =>
+    enemy.team !== megumi.team
+    && enemy.z === megumi.z
+    && distance2d(megumi, enemy.x, enemy.y) <= MEGUMI_MAHORAGA_RITUAL_RANGE,
+  );
+}
+
+function canSummonMahoraga(megumi) {
+  return Boolean(
+    isMegumi(megumi)
+    && megumi.hp > 0
+    && !megumi.moved
+    && !megumi.acted
+    && megumi.megumiTurnsTaken >= MEGUMI_MAHORAGA_TURN_REQUIREMENT
+    && megumi.hp / megumi.maxHp < MEGUMI_MAHORAGA_HP_RATIO
+    && megumi.maxCe >= MEGUMI_MAHORAGA_REQUIRED_MAX_CE
+    && megumi.ce >= MEGUMI_MAHORAGA_REQUIRED_CE
+    && mahoragaRitualTargets(megumi).length > 0
+  );
+}
+
+function isMegumiSharedTurn(unit = currentUnit()) {
+  const controller = turnController();
+  return Boolean(controller && isMegumi(controller) && (unit?.id === controller.id || unit?.summonerId === controller.id));
+}
+
+function controlledUnitsForMegumi(megumi) {
+  return [megumi, ...activeSummonsFor(megumi)].filter(Boolean);
+}
+
+function sharedTurnActors(megumi) {
+  return [megumi, ...state.units.filter((unit) => unit.summonerId === megumi.id)]
+    .filter((unit) => unit && (unit.acted || unit.moved || unit.sharedTurnActed));
+}
+
+function canActWithSharedUnit(target) {
+  const megumi = turnController();
+  if (!isMegumi(megumi) || !target || target.hp <= 0) return false;
+  if (target.id !== megumi.id && target.summonerId !== megumi.id) return false;
+  if (megumi.mustActPersonally) return target.id === megumi.id;
+
+  const actors = sharedTurnActors(megumi);
+  if (!actors.length) return true;
+  if (actors.every((unit) => unit.summonKind === "divineDog")) {
+    return target.summonKind === "divineDog" && !target.acted && !target.moved;
+  }
+  return actors.some((unit) => unit.id === target.id);
+}
+
+function canDismissSummonNow(megumi) {
+  return isMegumi(megumi) && !sharedTurnActors(megumi).length;
+}
+
+function sharedActorSelectionOptions(megumi) {
+  if (!isMegumi(megumi)) return [];
+  return controlledUnitsForMegumi(megumi)
+    .filter((unit) => unit.hp > 0 && !unit.acted && !unit.moved && canActWithSharedUnit(unit));
+}
+
+function beginSharedActorSelection(megumi) {
+  const options = sharedActorSelectionOptions(megumi);
+  const needsChoice = options.length > 1 || (options.length === 1 && options[0].id !== state.currentUnitId);
+  state.awaitingSharedActor = needsChoice;
+  state.sharedActorTargets.clear();
+  if (!needsChoice) return false;
+
+  state.selectedAction = "move";
+  state.selectedAbilityId = null;
+  state.abilityMenuOpen = false;
+  state.pendingSummon = null;
+  state.pendingTransfer = null;
+  state.pendingSwap = null;
+  for (const unit of options) state.sharedActorTargets.add(key(unit.x, unit.y, unit.z));
+  return true;
+}
+
+function switchSharedActor(targetId) {
+  const target = state.units.find((unit) => unit.id === targetId && !unit.removed);
+  if (!canActWithSharedUnit(target)) return;
+  state.awaitingSharedActor = false;
+  state.sharedActorTargets.clear();
+  state.currentUnitId = target.id;
+  state.previewLevel = target.z;
+  state.selectedAction = "move";
+  state.selectedAbilityId = null;
+  state.abilityMenuOpen = false;
+  state.pendingTransfer = null;
+  state.pendingSwap = null;
+  state.pendingSummon = null;
+  calculateRanges();
+  render();
+}
+
+function isMahitoTransformed(unit) {
+  return Boolean(isMahito(unit) && unit.activeEffects.mahitoTransformed);
+}
+
+function mahitoUltimateUnlocked(unit) {
+  const passive = getPassive(unit);
+  return passive?.id === "blackFlashPotential" && unit.mahitoBlackFlashes >= passive.ultimateThreshold;
+}
+
+function mahitoHpRatio(unit) {
+  return unit.maxHp ? unit.hp / unit.maxHp : 0;
 }
 
 function hasYujiInBattle() {
@@ -821,6 +1103,31 @@ function focusChance(unit) {
   return passive.blackFlashBaseChance + passive.blackFlashChancePerFocus * unit.focus;
 }
 
+function blackFlashChance(attacker, target) {
+  const passive = getPassive(attacker);
+  if (passive?.id === "focus") return focusChance(attacker);
+  if (passive?.id !== "blackFlashPotential" || isMahitoTransformed(attacker) || isTerrainObject(target)) return 0;
+  const missingHpRatio = target.maxHp ? (target.maxHp - target.hp) / target.maxHp : 0;
+  return passive.baseChance + passive.missingHpChance * missingHpRatio;
+}
+
+function blackFlashDamageMultiplier(attacker) {
+  const passive = getPassive(attacker);
+  if (passive?.id === "focus") return passive.blackFlashDamageMultiplier;
+  if (passive?.id === "blackFlashPotential") return passive.damageMultiplier;
+  return 1;
+}
+
+function resolveBlackFlashAfterAttack(attacker, blackFlash) {
+  const passive = getPassive(attacker);
+  if (!blackFlash || passive?.id !== "blackFlashPotential") return;
+  attacker.mahitoBlackFlashes += 1;
+  const before = attacker.ce;
+  attacker.ce = Math.min(attacker.maxCe, attacker.ce + passive.ceRestore);
+  addLog(`${attacker.name} triggers Black Flash (${attacker.mahitoBlackFlashes}/${passive.ultimateThreshold}) and restores ${attacker.ce - before} CE.`);
+  if (attacker.mahitoBlackFlashes === passive.ultimateThreshold) addLog(`${attacker.name} unlocks their Ultimate.`);
+}
+
 function distance2d(a, x, y) {
   return Math.abs(a.x - x) + Math.abs(a.y - y);
 }
@@ -830,13 +1137,27 @@ function isAdjacent8(a, b) {
 }
 
 function ceStatScale(unit) {
+  if (unit.isSummon) return 1;
   if (!unit.maxCe) return 1;
   const ceRatio = Math.max(0, Math.min(1, unit.ce / unit.maxCe));
   return MIN_CE_STAT_SCALE + (1 - MIN_CE_STAT_SCALE) * ceRatio;
 }
 
+function divineDogPackActive(unit) {
+  if (unit?.summonKind !== "divineDog" || unit.hp <= 0) return false;
+  return state.units.some((other) =>
+    other.id !== unit.id
+    && other.summonerId === unit.summonerId
+    && other.summonKind === "divineDog"
+    && other.hp > 0
+    && other.z === unit.z
+    && distance2d(unit, other.x, other.y) <= 2,
+  );
+}
+
 function effectiveAttack(unit) {
-  return Math.max(1, Math.floor(unit.attack * ceStatScale(unit) * tojiWeaponAttackMultiplier(unit)));
+  const packMultiplier = divineDogPackActive(unit) ? 1.25 : 1;
+  return Math.max(1, Math.floor(unit.attack * ceStatScale(unit) * tojiWeaponAttackMultiplier(unit) * packMultiplier));
 }
 
 function effectiveSpeed(unit) {
@@ -845,10 +1166,12 @@ function effectiveSpeed(unit) {
 
 function effectiveDefense(unit, options = {}) {
   const multiplier = options.ignoreActiveEffects ? 1 : unit.activeEffects.defenseMultiplier ?? 1;
-  return Math.max(1, Math.floor(unit.defense * ceStatScale(unit) * multiplier * stanceDefenseMultiplier(unit)));
+  const packMultiplier = divineDogPackActive(unit) ? 1.25 : 1;
+  return Math.max(1, Math.floor(unit.defense * ceStatScale(unit) * multiplier * stanceDefenseMultiplier(unit) * packMultiplier));
 }
 
 function defenseLabel(unit) {
+  if (isChoso(unit)) return String(effectiveDefense(unit));
   const multiplier = (unit.activeEffects.defenseMultiplier ?? 1) * stanceDefenseMultiplier(unit);
   if (multiplier === 1) return String(effectiveDefense(unit));
   return `${effectiveDefense(unit)} (${unit.defense} x${multiplier})`;
@@ -877,11 +1200,12 @@ function setAbilityCooldown(unit, ability) {
 }
 
 function regenerateTurnCe(unit) {
+  if (isMahitoTransformed(unit)) return;
   if (unit.hp <= 0 || unit.ce >= unit.maxCe) return;
   const amount = Math.max(1, Math.ceil(unit.maxCe * TURN_CE_REGEN_RATE));
   const before = unit.ce;
   unit.ce = Math.min(unit.maxCe, unit.ce + amount);
-  if (unit.ce !== before) addLog(`${unit.name} recupera ${unit.ce - before} CE.`);
+  if (unit.ce !== before) addLog(`${unit.name} restores ${unit.ce - before} CE.`);
 }
 
 function applyPoison(target, amount = 1) {
@@ -890,16 +1214,17 @@ function applyPoison(target, amount = 1) {
   target.poisonStacks = Math.min(POISON_MAX_STACKS, before + amount);
   target.poisonTurnsRemaining = POISON_DURATION_TURNS;
   if (target.poisonStacks !== before) {
-    addLog(`${target.name} recibe Veneno (${target.poisonStacks}/${POISON_MAX_STACKS}).`);
+    addLog(`${target.name} receives Poison (${target.poisonStacks}/${POISON_MAX_STACKS}).`);
     return;
   }
-  addLog(`Veneno de ${target.name} se mantiene (${target.poisonTurnsRemaining} turnos).`);
+  addLog(`${target.name}'s Poison is refreshed (${target.poisonTurnsRemaining} turns).`);
 }
 
-function applyBleeding(target) {
+function applyBleeding(target, options = {}) {
   if (target.hp <= 0) return;
+  target.bleedingStacks = options.stacking ? Math.max(1, (target.bleedingStacks ?? 0) + 1) : 1;
   target.bleedingTurnsRemaining = BLEEDING_DURATION_TURNS;
-  addLog(`${target.name} recibe Sangrado (${BLEEDING_DURATION_TURNS} turnos).`);
+  addLog(`${target.name} receives Bleeding ${target.bleedingStacks > 1 ? `(${target.bleedingStacks} stacks, ` : "("}${BLEEDING_DURATION_TURNS} turns).`);
 }
 
 function poisonDamageMultiplier(attacker, target) {
@@ -908,11 +1233,76 @@ function poisonDamageMultiplier(attacker, target) {
   return 1 + (target.poisonStacks ?? 0) * passive.damagePerPoisonStack;
 }
 
+function adaptationStackKey(damageType) {
+  return damageType || "strike";
+}
+
+function adaptedDamage(target, damage, damageType) {
+  if (!target?.isMahoraga || !damageType) return damage;
+  const stackKey = adaptationStackKey(damageType);
+  const stacks = target.adaptations[stackKey] ?? 0;
+  const reduced = Math.max(0, Math.floor(damage - damage * stacks * 0.1));
+  target.adaptations[stackKey] = Math.min(MAHORAGA_MAX_ADAPTATION_STACKS, stacks + 1);
+  addLog(`${target.name} adapts to ${stackKey} (${target.adaptations[stackKey]}/${MAHORAGA_MAX_ADAPTATION_STACKS}).`);
+  return reduced;
+}
+
+function totalAdaptationStacks(unit) {
+  return Object.values(unit?.adaptations ?? {}).reduce((total, value) => total + value, 0);
+}
+
+function mahoragaCanUseWorldSlash(unit) {
+  return Boolean(unit?.isMahoraga && totalAdaptationStacks(unit) >= 8);
+}
+
+function canMahoragaTarget(attacker, target) {
+  return !attacker?.isMahoraga || attacker.allowedTargetIds.includes(target.id);
+}
+
+function recordMegumiDamage(target, attacker) {
+  if (!isMegumi(target) || !attacker || attacker.team === target.team) return;
+  target.megumiDamageMemory.push({
+    attackerId: attacker.id,
+    megumiTurn: target.megumiTurnsTaken,
+  });
+  target.megumiDamageMemory = target.megumiDamageMemory.slice(-12);
+}
+
+function processIdleTransfigurationStartOfTurn(unit) {
+  if (unit.hp <= 0 || !unit.idleTransfigurationTurns) return;
+  const before = unit.ce;
+  unit.ce = Math.max(0, unit.ce - MAHITO_IDLE_CE_DRAIN);
+  unit.idleTransfigurationTurns = Math.max(0, unit.idleTransfigurationTurns - 1);
+  addLog(`${unit.name} loses ${before - unit.ce} CE from Idle Transfiguration.`);
+}
+
+function endMahitoTransformation(unit) {
+  if (!isMahitoTransformed(unit)) return;
+  const base = unit.mahitoBaseStats;
+  unit.activeEffects.mahitoTransformed = false;
+  unit.activeEffects.mahitoDepleted = true;
+  unit.maxCe = base?.maxCe ?? 100;
+  unit.ce = 0;
+  unit.attack = Math.max(1, Math.floor((base?.attack ?? unit.attack) * MAHITO_DEPLETED_STAT_MULTIPLIER));
+  unit.defense = Math.max(1, Math.floor((base?.defense ?? unit.defense) * MAHITO_DEPLETED_STAT_MULTIPLIER));
+  unit.speed = Math.max(1, Math.floor((base?.speed ?? unit.speed) * MAHITO_DEPLETED_STAT_MULTIPLIER));
+  addLog(`${unit.name} loses the transformation and is weakened.`);
+}
+
+function processMahitoTransformationStartOfTurn(unit) {
+  if (!isMahitoTransformed(unit) || unit.hp <= 0) return;
+  unit.ce = Math.max(0, unit.ce - MAHITO_TRANSFORM_TURN_CE_LOSS);
+  addLog(`${unit.name} spends ${MAHITO_TRANSFORM_TURN_CE_LOSS} CE to maintain their form.`);
+  if (unit.ce <= 0) endMahitoTransformation(unit);
+}
+
 function processBleedingStartOfTurn(unit) {
   if (unit.hp <= 0 || !unit.bleedingTurnsRemaining) return false;
-  unit.hp = Math.max(0, unit.hp - BLEEDING_DAMAGE);
+  const damage = BLEEDING_DAMAGE * Math.max(1, unit.bleedingStacks ?? 1);
+  unit.hp = Math.max(0, unit.hp - damage);
   unit.bleedingTurnsRemaining = Math.max(0, unit.bleedingTurnsRemaining - 1);
-  addLog(`${unit.name} sufre ${BLEEDING_DAMAGE} dano por Sangrado.`);
+  if (!unit.bleedingTurnsRemaining) unit.bleedingStacks = 0;
+  addLog(`${unit.name} takes ${damage} damage from Bleeding.`);
   if (unit.hp > 0) return false;
   handleUnitDefeated(unit);
   if (checkVictory()) {
@@ -929,7 +1319,7 @@ function processPoisonStartOfTurn(unit) {
   if (unit.hp <= 0 || !unit.poisonStacks) return false;
   const damage = unit.poisonStacks * POISON_DAMAGE_PER_STACK;
   unit.hp = Math.max(0, unit.hp - damage);
-  addLog(`${unit.name} sufre ${damage} dano por Veneno.`);
+  addLog(`${unit.name} takes ${damage} damage from Poison.`);
   unit.poisonTurnsRemaining = Math.max(0, (unit.poisonTurnsRemaining ?? POISON_DURATION_TURNS) - 1);
   if (unit.hp > 0) return false;
   handleUnitDefeated(unit);
@@ -947,7 +1337,7 @@ function clearExpiredPoison(unit) {
   if (unit.hp <= 0 || !unit.poisonStacks || unit.poisonTurnsRemaining > 0) return;
   unit.poisonStacks = 0;
   unit.poisonTurnsRemaining = 0;
-  addLog(`Veneno de ${unit.name} se disipa.`);
+  addLog(`${unit.name}'s Poison wears off.`);
 }
 
 function selectedAbility() {
@@ -960,14 +1350,23 @@ function selectedAbility() {
 function abilityDescription(ability) {
   const cooldown = ability.cooldownTurns ? `, CD ${ability.cooldownTurns}` : "";
   if (ability.type === "weaponSwitch") return `${ability.description}${cooldown}`;
-  if (ability.type === "teleport") return `Teletransporte ${ability.range} casillas${cooldown}`;
+  if (ability.type === "teleport") return `Teleport ${ability.range} tiles${cooldown}`;
+  if (ability.type === "distortedMove") return `Move ${ability.range} tiles, ${ability.ceCost} CE${cooldown}`;
+  if (ability.type === "soulTouch") return `Drains ${ability.ceDrain} CE; executes below ${ability.executionThreshold}/${ability.markedExecutionThreshold} CE, ${ability.ceCost} CE`;
+  if (ability.type === "idleTransfiguration") return `Marks for ${ability.markTurns} turns, range ${ability.range}, ${ability.ceCost} CE${cooldown}`;
+  if (ability.type === "mahitoDomain") return `Domain radius ${ability.radius}, ${ability.ceCost} CE, once per match`;
+  if (ability.type === "mahitoTransform") return "Final transformation, spends current CE and gains 150 CE, once per match";
+  if (ability.type === "predatorDash") return `Straight dash ${ability.range} tiles, applies Bleeding${cooldown}`;
+  if (ability.type === "blindSpotStrike") return `Teleports beside the target and attacks, range ${ability.range}${cooldown}`;
   if (ability.type === "sweepAttack") return `${ability.description}${cooldown}`;
-  if (ability.id === "supernova") return `Coloca un orbe ${SUPERNOVA_DURATION_TURNS} turnos; activacion gratis, ${ability.ceCost} CE${cooldown}`;
+  if (ability.type === "boogieSwap" || ability.type === "forcedSwap") return `${ability.description}, range ${ability.range}, ${ability.ceCost} CE${cooldown}`;
+  if (ability.id === "supernova") return `Places an orb for ${SUPERNOVA_DURATION_TURNS} turns; free activation, ${ability.ceCost} CE${cooldown}`;
+  if (ability.type === "unitAreaAttack") return `Target enemy within ${ability.range} tiles; hits units adjacent to the target, ${ability.ceCost} CE${cooldown}`;
   if (ability.description) return `${ability.description}, ${ability.ceCost} CE${cooldown}`;
-  if (ability.type === "self") return `Personal, ${ability.ceCost} CE${cooldown}`;
+  if (ability.type === "self") return `Self, ${ability.ceCost} CE${cooldown}`;
   if (ability.type === "areaAttack") return `Area ${ability.radius}, x${ability.attackMultiplier}, ${ability.ceCost} CE${cooldown}`;
-  if (ability.type === "attack") return `Ataque x${ability.attackMultiplier}, ${ability.ceCost} CE${cooldown}`;
-  return `Apoyo/utilidad, ${ability.ceCost} CE${cooldown}`;
+  if (ability.type === "attack") return `Attack x${ability.attackMultiplier}, ${ability.ceCost} CE${cooldown}`;
+  return `Support/utility, ${ability.ceCost} CE${cooldown}`;
 }
 
 function queueVisualEvent(type, payload = {}) {
@@ -992,7 +1391,7 @@ function stopInitiativeClock() {
 
 function startInitiativeClock() {
   if (state.gameOver || state.currentUnitId || initiativeFrameId) return;
-  phaseTextEl.textContent = "La barra de accion avanza";
+  phaseTextEl.textContent = "Action bar advances";
   lastInitiativeAt = performance.now();
   initiativeFrameId = requestAnimationFrame(tickInitiative);
 }
@@ -1032,22 +1431,37 @@ function selectNextTurn(ready) {
   if (processBleedingStartOfTurn(next)) return;
   clearExpiredPoison(next);
   regenerateTurnCe(next);
+  processIdleTransfigurationStartOfTurn(next);
+  processMahitoTransformationStartOfTurn(next);
   tickAbilityCooldowns(next);
   next.initiative = 0;
   next.acted = false;
   next.moved = false;
   next.attackedThisTurn = false;
   state.currentUnitId = next.id;
+  state.turnControllerId = next.id;
+  if (isMegumi(next)) {
+    next.megumiTurnsTaken += 1;
+    next.mustActPersonally = false;
+    for (const summon of activeSummonsFor(next)) {
+      summon.acted = false;
+      summon.moved = false;
+      summon.sharedTurnActed = false;
+    }
+    beginSharedActorSelection(next);
+  }
   state.previewLevel = next.z;
   state.selectedAction = "move";
   state.selectedAbilityId = null;
   state.abilityMenuOpen = false;
   state.pendingTransfer = null;
+  state.pendingSwap = null;
+  state.pendingSummon = null;
   state.inspectedTile = null;
   state.turnCount += 1;
   state.round = Math.floor((state.turnCount - 1) / Math.max(1, turnEligibleUnits().length)) + 1;
   calculateRanges();
-  addLog(`Turno de ${next.name} (${next.team === "blue" ? "Azul" : "Rojo"}).`);
+  addLog(`${next.name}'s turn (${next.team === "blue" ? "Blue" : "Red"}).`);
   render();
 }
 
@@ -1058,7 +1472,7 @@ function handleDeadYujiTurn(unit) {
   fingerState.deadTurnsReady += 1;
 
   if (fingerState.deadTurnsReady < 2) {
-    addLog(`${unit.name} yace en el suelo. Sukuna aun no despierta.`);
+    addLog(`${unit.name} lies on the ground. Sukuna has not awakened yet.`);
     state.currentUnitId = null;
     render();
     startInitiativeClock();
@@ -1087,14 +1501,19 @@ function advanceToNextTurn() {
   }
 
   state.currentUnitId = null;
+  state.turnControllerId = null;
+  state.awaitingSharedActor = false;
   state.selectedAction = "move";
   state.selectedAbilityId = null;
   state.abilityMenuOpen = false;
+  state.pendingSummon = null;
   state.pendingTransfer = null;
+  state.pendingSwap = null;
   state.inspectedTile = null;
   state.reachable.clear();
   state.attackable.clear();
   state.abilityTargets.clear();
+  state.sharedActorTargets.clear();
   render();
   startInitiativeClock();
 }
@@ -1104,7 +1523,16 @@ function calculateRanges() {
   state.reachable.clear();
   state.attackable.clear();
   state.abilityTargets.clear();
+  state.sharedActorTargets.clear();
   if (!unit || unit.hp <= 0 || state.gameOver) return;
+
+  if (state.awaitingSharedActor) {
+    const megumi = turnController();
+    for (const actor of sharedActorSelectionOptions(megumi)) {
+      state.sharedActorTargets.add(key(actor.x, actor.y, actor.z));
+    }
+    return;
+  }
 
   if (!unit.moved) {
     const queue = [{ x: unit.x, y: unit.y, distance: 0 }];
@@ -1128,6 +1556,7 @@ function calculateRanges() {
 
   if (!unit.acted) {
     for (const enemy of livingUnits().filter((target) => target.team !== unit.team && target.z === unit.z)) {
+      if (!canMahoragaTarget(unit, enemy)) continue;
       const distance = distance2d(unit, enemy.x, enemy.y);
       if (distance > 0 && distance <= basicAttackRange(unit)) state.attackable.add(enemy.id);
     }
@@ -1139,8 +1568,43 @@ function calculateRanges() {
 
   const ability = selectedAbility();
   if (!ability || unit.acted || unit.ce < ability.ceCost || abilityCooldown(unit, ability.id) > 0 || (ability.id === "supernova" && activeSupernovaForUnit(unit))) return;
-  if (ability.type === "self") {
+  if (ability.type === "self" || ability.type === "mahitoDomain" || ability.type === "mahitoTransform" || ability.type === "summonMahoraga") {
     state.abilityTargets.add(key(unit.x, unit.y, unit.z));
+    return;
+  }
+
+  if (ability.type === "summonUnit" || ability.type === "summonPair") {
+    for (let y = 0; y < SIZE; y += 1) {
+      for (let x = 0; x < SIZE; x += 1) {
+        if (distance2d(unit, x, y) > ability.range) continue;
+        if (!canPlaceSummonAt(x, y, unit.z)) continue;
+        if (state.pendingSummon?.positions?.some((position) => position.x === x && position.y === y && position.z === unit.z)) continue;
+        state.abilityTargets.add(key(x, y, unit.z));
+      }
+    }
+    return;
+  }
+
+  if (ability.type === "summonDrop") {
+    for (let y = 0; y < SIZE; y += 1) {
+      for (let x = 0; x < SIZE; x += 1) {
+        if (distance2d(unit, x, y) > ability.range) continue;
+        if (solidTerrainAt(x, y, unit.z) || holeAt(x, y, unit.z)) continue;
+        if (!validAdjacentSummonTiles(unit, x, y, unit.z).length) continue;
+        state.abilityTargets.add(key(x, y, unit.z));
+      }
+    }
+    return;
+  }
+
+  if (ability.type === "distortedMove") {
+    for (let y = 0; y < SIZE; y += 1) {
+      for (let x = 0; x < SIZE; x += 1) {
+        if (distance2d(unit, x, y) > ability.range) continue;
+        if (!canOccupyTile(unit, x, y, unit.z)) continue;
+        state.abilityTargets.add(key(x, y, unit.z));
+      }
+    }
     return;
   }
 
@@ -1155,6 +1619,52 @@ function calculateRanges() {
           state.abilityTargets.add(key(x, y, z));
         }
       }
+    }
+    return;
+  }
+
+  if (ability.type === "boogieSwap" || ability.type === "forcedSwap") {
+    for (const target of livingUnits()) {
+      if (target.id === unit.id || target.z !== unit.z || distance2d(unit, target.x, target.y) > ability.range) continue;
+      if (ability.type === "forcedSwap" && target.id === state.pendingSwap?.firstTargetId) continue;
+      state.abilityTargets.add(key(target.x, target.y, target.z));
+    }
+    return;
+  }
+
+  if (ability.type === "soulTouch" || ability.type === "idleTransfiguration" || ability.type === "blindSpotStrike") {
+    for (const target of livingUnits().filter((entry) => entry.team !== unit.team && entry.z === unit.z)) {
+      if (distance2d(unit, target.x, target.y) > ability.range) continue;
+      if (ability.type === "blindSpotStrike" && !validBlindSpotTiles(target, unit).length) continue;
+      state.abilityTargets.add(key(target.x, target.y, target.z));
+    }
+    return;
+  }
+
+  if (ability.type === "unitAreaAttack") {
+    for (const target of livingUnits().filter((entry) => entry.id !== unit.id && entry.team !== unit.team && entry.z === unit.z)) {
+      if (distance2d(unit, target.x, target.y) > ability.range) continue;
+      state.abilityTargets.add(key(target.x, target.y, target.z));
+    }
+    return;
+  }
+
+  if (ability.type === "predatorDash") {
+    for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+      for (let step = 1; step <= ability.range; step += 1) {
+        const x = unit.x + dx * step;
+        const y = unit.y + dy * step;
+        if (x < 0 || x >= SIZE || y < 0 || y >= SIZE) break;
+        if (!canOccupyTile(unit, x, y, unit.z)) continue;
+        state.abilityTargets.add(key(x, y, unit.z));
+      }
+    }
+    return;
+  }
+
+  if (ability.type === "worldCuttingSlash") {
+    for (let y = 0; y < SIZE; y += 1) {
+      for (let x = 0; x < SIZE; x += 1) state.abilityTargets.add(key(x, y, unit.z));
     }
     return;
   }
@@ -1200,13 +1710,13 @@ function renderTeamList() {
     const section = document.createElement("section");
     section.className = "team-list-section";
     const title = document.createElement("h3");
-    title.textContent = `Equipo ${team === "red" ? "rojo" : "azul"}`;
+    title.textContent = `${team === "red" ? "Red" : "Blue"} Team`;
     section.append(title);
 
-    const teamUnits = state.units.filter((unit) => unit.team === team);
+    const teamUnits = state.units.filter((unit) => unit.team === team && !unit.removed);
     if (!teamUnits.length) {
       const empty = document.createElement("p");
-      empty.textContent = "Sin unidades.";
+      empty.textContent = "No units.";
       section.append(empty);
     }
 
@@ -1228,10 +1738,10 @@ function renderTeamList() {
 
       const copy = document.createElement("span");
       const fingerInfo = hasYujiInBattle()
-        ? ` - ${unit.sukunaFingers} dedos${isYuji(unit) ? ` - ${yujiFingerState(unit)?.consumed ?? 0} consumidos` : ""}${totalFingerContributions(unit) ? ` - ${totalFingerContributions(unit)} dados` : ""}`
+        ? ` - ${unit.sukunaFingers} fingers${isYuji(unit) ? ` - ${yujiFingerState(unit)?.consumed ?? 0} consumed` : ""}${totalFingerContributions(unit) ? ` - ${totalFingerContributions(unit)} given` : ""}`
         : "";
-      const statusInfo = `${unit.stance ? ` - ${stanceLabel(unit)}` : ""}${unit.weapon ? ` - ${weaponName(unit.weapon)}` : ""}${unit.poisonStacks ? ` - Veneno ${unit.poisonStacks} (${unit.poisonTurnsRemaining})` : ""}${unit.bleedingTurnsRemaining ? ` - Sangrado ${unit.bleedingTurnsRemaining}` : ""}`;
-      copy.innerHTML = `<strong>${unit.name}</strong><small>${unit.hp}/${unit.maxHp} vida - ${ceLabel(unit)}${statusInfo}${fingerInfo}</small>`;
+      const statusInfo = `${unit.stance ? ` - ${stanceLabel(unit)}` : ""}${unit.weapon ? ` - ${weaponName(unit.weapon)}` : ""}${isMahitoTransformed(unit) ? " - Transformed" : ""}${unit.poisonStacks ? ` - Poison ${unit.poisonStacks} (${unit.poisonTurnsRemaining})` : ""}${unit.bleedingTurnsRemaining ? ` - Bleeding ${unit.bleedingStacks || 1} (${unit.bleedingTurnsRemaining})` : ""}${unit.idleTransfigurationTurns ? ` - Mark ${unit.idleTransfigurationTurns}` : ""}`;
+      copy.innerHTML = `<strong>${unit.name}</strong><small>${unit.hp}/${unit.maxHp} HP - ${ceLabel(unit)}${statusInfo}${fingerInfo}</small>`;
 
       button.append(portrait, copy);
       section.append(button);
@@ -1275,7 +1785,7 @@ function renderBoardStack() {
 function renderLevelLabel(z) {
   const label = document.createElement("div");
   label.className = "level-label";
-  label.textContent = `N${z + 1}`;
+  label.textContent = `F${z + 1}`;
   return label;
 }
 
@@ -1291,7 +1801,7 @@ function renderTile(x, y, z) {
   const ability = selectedAbility();
   tile.type = "button";
   tile.className = "tile";
-  tile.setAttribute("aria-label", `Casilla ${x + 1}, ${y + 1}, nivel ${z + 1}`);
+  tile.setAttribute("aria-label", `Tile ${x + 1}, ${y + 1}, floor ${z + 1}`);
 
   if (stairAt(x, y, z)) tile.classList.add("stairs");
   if (hole) tile.classList.add("hole");
@@ -1300,21 +1810,19 @@ function renderTile(x, y, z) {
   if (supernova) tile.classList.add("supernova-tile");
   if (state.reachable.has(tileKey)) tile.classList.add("move");
   if (state.abilityTargets.has(tileKey)) tile.classList.add(ability?.type === "attack" ? "skill-attack" : "skill-support");
+  if (state.sharedActorTargets.has(tileKey)) tile.classList.add("shared-actor-target");
   if ((occupant && state.attackable.has(occupant.id)) || (terrainObject && state.attackable.has(terrainObject.id))) tile.classList.add("attack");
   if (unit && unit.x === x && unit.y === y && unit.z === z) tile.classList.add("selected");
 
   if (terrainObject) {
     tile.append(renderTerrainObject(terrainObject));
-    const hp = document.createElement("span");
-    hp.className = "terrain-hp";
-    hp.innerHTML = `<span style="width:${(terrainObject.hp / terrainObject.maxHp) * 100}%"></span>`;
-    tile.append(hp);
   }
 
   if (occupant) {
     const otherFloorUnit = occupant.z !== state.previewLevel;
     const currentTurnUnit = unit && occupant.id === unit.id;
-    tile.append(renderUnit(occupant, `${otherFloorUnit ? "other-floor-unit" : ""} ${currentTurnUnit ? "current-turn-unit" : ""}`));
+    const sharedActorUnit = state.sharedActorTargets.has(tileKey);
+    tile.append(renderUnit(occupant, `${otherFloorUnit ? "other-floor-unit" : ""} ${currentTurnUnit ? "current-turn-unit" : ""} ${sharedActorUnit ? "shared-actor-unit" : ""}`));
     if (occupant.hp > 0) {
       const hp = document.createElement("span");
       hp.className = `hp ${otherFloorUnit ? "other-floor-unit" : ""}`;
@@ -1327,7 +1835,7 @@ function renderTile(x, y, z) {
     const finger = document.createElement("span");
     finger.className = "finger-token";
     finger.textContent = fingerPile.count > 1 ? String(fingerPile.count) : "";
-    finger.title = `${fingerPile.count} dedo${fingerPile.count === 1 ? "" : "s"} de Sukuna`;
+    finger.title = `${fingerPile.count} Sukuna Finger${fingerPile.count === 1 ? "" : "s"}`;
     tile.append(finger);
   }
 
@@ -1335,7 +1843,7 @@ function renderTile(x, y, z) {
     const orb = document.createElement("span");
     orb.className = `supernova-orb ${supernova.team}-orb`;
     orb.textContent = supernova.remainingTurns;
-    orb.title = `Supernova: ${supernova.remainingTurns} turno${supernova.remainingTurns === 1 ? "" : "s"}`;
+    orb.title = `Supernova: ${supernova.remainingTurns} turn${supernova.remainingTurns === 1 ? "" : "s"}`;
     tile.append(orb);
   }
 
@@ -1414,10 +1922,10 @@ function renderInitiative() {
 function renderPanel() {
   const unit = currentUnit();
   const displayUnit = inspectedUnit() ?? unit;
-  roundTextEl.textContent = `Ronda ${state.round}`;
+  roundTextEl.textContent = `Round ${state.round}`;
 
   if (!displayUnit) {
-    phaseTextEl.textContent = state.gameOver ? "Batalla terminada" : "Calculando turno";
+    phaseTextEl.textContent = state.gameOver ? "Battle finished" : "Calculating turn";
     unitCardEl.innerHTML = "";
     abilityMenuEl.classList.add("hidden");
     abilityMenuEl.innerHTML = "";
@@ -1425,34 +1933,40 @@ function renderPanel() {
   }
 
   const abilities = getAbilities(displayUnit);
-  phaseTextEl.textContent = unit
-    ? `${unit.team === "blue" ? "Azul" : "Rojo"} juega con ${unit.name}.`
-    : state.gameOver ? "Batalla terminada" : "Calculando turno";
+  phaseTextEl.textContent = state.awaitingSharedActor
+    ? `${turnController().team === "blue" ? "Blue" : "Red"} chooses who acts.`
+    : unit
+    ? `${unit.team === "blue" ? "Blue" : "Red"} acts with ${unit.name}.`
+    : state.gameOver ? "Battle finished" : "Calculating turn";
   unitCardEl.innerHTML = `
     <h2>${displayUnit.name}</h2>
     <div class="stat-grid">
-      <div class="stat"><strong>Equipo</strong>${displayUnit.team === "blue" ? "Azul" : "Rojo"}</div>
-      <div class="stat"><strong>Nivel</strong>${displayUnit.z + 1}</div>
-      <div class="stat"><strong>Vida</strong>${displayUnit.hp}/${displayUnit.maxHp}</div>
+      <div class="stat"><strong>Team</strong>${displayUnit.team === "blue" ? "Blue" : "Red"}</div>
+      <div class="stat"><strong>Floor</strong>${displayUnit.z + 1}</div>
+      <div class="stat"><strong>HP</strong>${displayUnit.hp}/${displayUnit.maxHp}</div>
       <div class="stat"><strong>CE</strong>${ceLabel(displayUnit)}</div>
-      <div class="stat"><strong>Ataque</strong>${effectiveAttack(displayUnit)}</div>
-      <div class="stat"><strong>Defensa</strong>${defenseLabel(displayUnit)}</div>
-      <div class="stat"><strong>Movilidad</strong>${displayUnit.mobility}</div>
-      <div class="stat"><strong>Velocidad</strong>${effectiveSpeed(displayUnit)}</div>
-      ${displayUnit.stance ? `<div class="stat"><strong>Postura</strong>${stanceLabel(displayUnit)}</div>` : ""}
-      ${displayUnit.weapon ? `<div class="stat"><strong>Arma</strong>${weaponName(displayUnit.weapon)}</div>` : ""}
-      ${displayUnit.poisonStacks ? `<div class="stat"><strong>Veneno</strong>${displayUnit.poisonStacks}/${POISON_MAX_STACKS} - ${displayUnit.poisonTurnsRemaining}t</div>` : ""}
-      ${displayUnit.bleedingTurnsRemaining ? `<div class="stat"><strong>Sangrado</strong>${displayUnit.bleedingTurnsRemaining}t</div>` : ""}
+      <div class="stat"><strong>Attack</strong>${effectiveAttack(displayUnit)}</div>
+      <div class="stat"><strong>Defense</strong>${defenseLabel(displayUnit)}</div>
+      <div class="stat"><strong>Mobility</strong>${displayUnit.mobility}</div>
+      <div class="stat"><strong>Speed</strong>${effectiveSpeed(displayUnit)}</div>
+      ${displayUnit.stance ? `<div class="stat"><strong>Stance</strong>${stanceLabel(displayUnit)}</div>` : ""}
+      ${displayUnit.weapon ? `<div class="stat"><strong>Weapon</strong>${weaponName(displayUnit.weapon)}</div>` : ""}
+      ${displayUnit.poisonStacks ? `<div class="stat"><strong>Poison</strong>${displayUnit.poisonStacks}/${POISON_MAX_STACKS} - ${displayUnit.poisonTurnsRemaining}t</div>` : ""}
+      ${displayUnit.bleedingTurnsRemaining ? `<div class="stat"><strong>Bleeding</strong>${displayUnit.bleedingStacks || 1} - ${displayUnit.bleedingTurnsRemaining}t</div>` : ""}
+      ${displayUnit.idleTransfigurationTurns ? `<div class="stat"><strong>Mark</strong>${displayUnit.idleTransfigurationTurns}t</div>` : ""}
       ${displayUnit.focus !== null ? `<div class="stat"><strong>Focus</strong>${displayUnit.focus}/5</div>` : ""}
-      ${hasYujiInBattle() ? `<div class="stat"><strong>Dedos</strong>${displayUnit.sukunaFingers}</div>` : ""}
-      ${hasYujiInBattle() ? `<div class="stat"><strong>Entregados</strong>${totalFingerContributions(displayUnit)}</div>` : ""}
-      ${hasYujiInBattle() && isYuji(displayUnit) ? `<div class="stat"><strong>Consumidos</strong>${yujiFingerState(displayUnit)?.consumed ?? 0}</div>` : ""}
+      ${isMahito(displayUnit) ? `<div class="stat"><strong>Black Flash</strong>${displayUnit.mahitoBlackFlashes}/2</div>` : ""}
+      ${isMahitoTransformed(displayUnit) ? `<div class="stat"><strong>Form</strong>Transformed</div>` : ""}
+      ${hasYujiInBattle() ? `<div class="stat"><strong>Fingers</strong>${displayUnit.sukunaFingers}</div>` : ""}
+      ${hasYujiInBattle() ? `<div class="stat"><strong>Given</strong>${totalFingerContributions(displayUnit)}</div>` : ""}
+      ${hasYujiInBattle() && isYuji(displayUnit) ? `<div class="stat"><strong>Consumed</strong>${yujiFingerState(displayUnit)?.consumed ?? 0}</div>` : ""}
     </div>
-    ${displayUnit.id !== unit?.id && unit ? `<div class="ability-line">Turno actual: ${unit.name}</div>` : ""}
-    ${getPassive(displayUnit) ? `<div class="ability-line">Pasiva: ${getPassive(displayUnit).name}</div>` : ""}
-    ${displayUnit.stance ? `<div class="ability-line">${displayUnit.stance === "blood" ? "Ataque basico a distancia, aplica Veneno." : "Ataque basico cuerpo a cuerpo mejorado, mas defensa."}</div>` : ""}
-    ${displayUnit.weapon ? `<div class="ability-line">Arma equipada: ${weaponName(displayUnit.weapon)}${Object.entries(displayUnit.weaponLocks ?? {}).length ? ` - Bloqueos: ${Object.entries(displayUnit.weaponLocks).map(([weaponId, turns]) => `${weaponName(weaponId)} ${turns}t`).join(", ")}` : ""}</div>` : ""}
-    <div class="ability-line">${abilities.length} habilidad${abilities.length === 1 ? "" : "es"} disponible${abilities.length === 1 ? "" : "s"}</div>
+    ${displayUnit.id !== unit?.id && unit ? `<div class="ability-line">Current turn: ${unit.name}</div>` : ""}
+    ${getPassive(displayUnit) ? `<div class="ability-line">Passive: ${getPassive(displayUnit).name}</div>` : ""}
+    ${displayUnit.stance ? `<div class="ability-line">${displayUnit.stance === "blood" ? "Ranged basic attack, applies Poison." : "Improved melee basic attack, higher defense."}</div>` : ""}
+    ${isMahitoTransformed(displayUnit) ? `<div class="ability-line">Transformed basic attack: applies Bleeding.</div>` : ""}
+    ${displayUnit.weapon ? `<div class="ability-line">Equipped weapon: ${weaponName(displayUnit.weapon)}${Object.entries(displayUnit.weaponLocks ?? {}).length ? ` - Locks: ${Object.entries(displayUnit.weaponLocks).map(([weaponId, turns]) => `${weaponName(weaponId)} ${turns}t`).join(", ")}` : ""}</div>` : ""}
+    <div class="ability-line">${abilities.length} available technique${abilities.length === 1 ? "" : "s"}</div>
     <div class="ability-list">${abilities.map((ability) => `<div><strong>${ability.name}</strong><span>${abilityDescription(ability)}</span></div>`).join("")}</div>
   `;
 
@@ -1471,18 +1985,20 @@ function renderPanel() {
   }
 
   const unitDefeated = unit.hp <= 0;
-  attackBtn.disabled = state.gameOver || unitDefeated || unit.acted || !state.attackable.size;
+  attackBtn.disabled = state.gameOver || state.awaitingSharedActor || unitDefeated || unit.acted || !state.attackable.size;
   attackBtn.classList.toggle("active", state.selectedAction === "attack");
   const turnAbilities = getAbilities(unit);
   const hasFreeSupernova = Boolean(activeSupernovaForUnit(unit));
   const hasFreeWeaponSwitch = turnAbilities.some((ability) => ability.type === "weaponSwitch" && unit.weapon !== ability.weaponId && weaponLock(unit, ability.weaponId) === 0);
-  skillBtn.disabled = state.gameOver || unitDefeated || (unit.acted && !hasFreeSupernova && !hasFreeWeaponSwitch) || !turnAbilities.length;
+  const megumi = isMegumiSharedTurn(unit) ? turnController() : null;
+  const hasSharedControls = Boolean(megumi && activeSummonsFor(megumi).some(() => canDismissSummonNow(megumi)));
+  skillBtn.disabled = state.gameOver || state.awaitingSharedActor || unitDefeated || (unit.acted && !hasFreeSupernova && !hasFreeWeaponSwitch && !hasSharedControls) || (!turnAbilities.length && !hasSharedControls);
   skillBtn.classList.toggle("active", state.abilityMenuOpen);
   specialBtn.classList.toggle("hidden", !hasYujiInBattle());
-  specialBtn.textContent = canTransferFingers(unit) ? "Dar dedos" : "Especial";
-  specialBtn.disabled = state.gameOver || unitDefeated || !canTransferFingers(unit);
-  stairsUpBtn.disabled = state.gameOver || unitDefeated || !canChangeLevel(unit, 1);
-  stairsDownBtn.disabled = state.gameOver || unitDefeated || !canChangeLevel(unit, -1);
+  specialBtn.textContent = canTransferFingers(unit) ? "Give Fingers" : "Special";
+  specialBtn.disabled = state.gameOver || state.awaitingSharedActor || unitDefeated || !canTransferFingers(unit);
+  stairsUpBtn.disabled = state.gameOver || state.awaitingSharedActor || unitDefeated || !canChangeLevel(unit, 1);
+  stairsDownBtn.disabled = state.gameOver || state.awaitingSharedActor || unitDefeated || !canChangeLevel(unit, -1);
   endBtn.disabled = state.gameOver;
   renderAbilityMenu(unit, turnAbilities);
   renderTransferPanel(unit);
@@ -1496,7 +2012,7 @@ function renderTransferPanel(unit) {
 
   const yuji = adjacentYujiForTransfer(unit);
   transferPanelEl.classList.remove("hidden");
-  transferPanelEl.querySelector("label").textContent = `${unit.name} entrega dedos a ${yuji.name}`;
+  transferPanelEl.querySelector("label").textContent = `${unit.name} gives fingers to ${yuji.name}`;
   transferAmountInput.max = String(unit.sukunaFingers);
   if (!transferAmountInput.value) transferAmountInput.value = String(unit.sukunaFingers);
 }
@@ -1505,6 +2021,8 @@ function renderAbilityMenu(unit, abilities) {
   abilityMenuEl.innerHTML = "";
   abilityMenuEl.classList.toggle("hidden", !state.abilityMenuOpen);
   if (!state.abilityMenuOpen) return;
+
+  renderMegumiControlButtons(unit);
 
   for (const ability of abilities) {
     const button = document.createElement("button");
@@ -1519,8 +2037,8 @@ function renderAbilityMenu(unit, abilities) {
       ? state.gameOver || unit.hp <= 0
       : state.gameOver || unit.acted || unit.ce < ability.ceCost || cooldown > 0;
     button.innerHTML = activeSupernova
-      ? `<strong>Activar Supernova</strong><span>Gratis, ${activeSupernova.remainingTurns} turno${activeSupernova.remainingTurns === 1 ? "" : "s"}</span>`
-      : `<strong>${ability.name}</strong><span>${lockedWeaponTurns > 0 ? `Bloq ${lockedWeaponTurns} turno${lockedWeaponTurns === 1 ? "" : "s"}` : cooldown > 0 ? `CD ${cooldown} turno${cooldown === 1 ? "" : "s"}` : abilityDescription(ability)}</span>`;
+      ? `<strong>Detonate Supernova</strong><span>Free, ${activeSupernova.remainingTurns} turn${activeSupernova.remainingTurns === 1 ? "" : "s"}</span>`
+      : `<strong>${ability.name}</strong><span>${lockedWeaponTurns > 0 ? `Locked ${lockedWeaponTurns} turn${lockedWeaponTurns === 1 ? "" : "s"}` : cooldown > 0 ? `CD ${cooldown} turn${cooldown === 1 ? "" : "s"}` : abilityDescription(ability)}</span>`;
     button.addEventListener("click", () => {
       if (activeSupernova) {
         activateSupernova(unit);
@@ -1541,9 +2059,24 @@ function renderAbilityMenu(unit, abilities) {
     state.selectedAction = "skill";
     state.selectedAbilityId = ability.id;
     state.pendingTransfer = null;
+    state.pendingSwap = null;
+    if (state.pendingSummon?.abilityId !== ability.id) state.pendingSummon = null;
     calculateRanges();
     render();
     });
+    abilityMenuEl.append(button);
+  }
+}
+
+function renderMegumiControlButtons(unit) {
+  if (!isMegumiSharedTurn(unit)) return;
+  const megumi = turnController();
+  for (const summon of activeSummonsFor(megumi)) {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.disabled = !canDismissSummonNow(megumi);
+    button.innerHTML = `<strong>Dismiss ${summon.name}</strong><span>Free, restores ${summon.ce} CE and CD ${SUMMON_DISMISS_COOLDOWN_TURNS}</span>`;
+    button.addEventListener("click", () => dismissSummon(summon, { forceMegumi: true }));
     abilityMenuEl.append(button);
   }
 }
@@ -1569,31 +2102,32 @@ function renderTileInfo() {
   const hole = holeAt(x, y, z);
   const fingerPile = fingerPileAt(x, y, z);
   const supernova = supernovaAt(x, y, z);
-  const tileKind = stair ? "Escalera" : hole ? "Agujero" : "Suelo";
+  const tileKind = stair ? "Stairs" : hole ? "Hole" : "Floor";
   const tileState = [
-    state.reachable.has(key(x, y, z)) ? "Movimiento posible" : "",
-    state.abilityTargets.has(key(x, y, z)) ? "Objetivo de habilidad" : "",
+    state.reachable.has(key(x, y, z)) ? "Can move" : "",
+    state.abilityTargets.has(key(x, y, z)) ? "Technique target" : "",
+    state.sharedActorTargets.has(key(x, y, z)) ? "Can act" : "",
   ].filter(Boolean);
 
   const title = document.createElement("h3");
-  title.textContent = `${tileKind} ${x + 1},${y + 1}, nivel ${z + 1}`;
+  title.textContent = `${tileKind} ${x + 1},${y + 1}, floor ${z + 1}`;
   tileInfoEl.append(title);
 
   const meta = document.createElement("p");
   const tileDetails = [...tileState];
-  if (fingerPile) tileDetails.push(`${fingerPile.count} dedo${fingerPile.count === 1 ? "" : "s"} de Sukuna`);
-  if (hole) tileDetails.push("Bajada al nivel inferior");
-  if (terrainObject) tileDetails.push(`${terrainObject.name}: ${terrainObject.hp}/${terrainObject.maxHp} vida`);
+  if (fingerPile) tileDetails.push(`${fingerPile.count} Sukuna Finger${fingerPile.count === 1 ? "" : "s"}`);
+  if (hole) tileDetails.push("Descent to the lower floor");
+  if (terrainObject) tileDetails.push(terrainObject.name);
   if (supernova) {
     const owner = state.units.find((unit) => unit.id === supernova.ownerId);
-    tileDetails.push(`Supernova de ${owner?.name ?? "Choso"} (${supernova.remainingTurns})`);
+    tileDetails.push(`${owner?.name ?? "Choso"}'s Supernova (${supernova.remainingTurns})`);
   }
-  meta.textContent = tileDetails.length ? tileDetails.join(" - ") : "Sin marcador activo";
+  meta.textContent = tileDetails.length ? tileDetails.join(" - ") : "No active marker";
   tileInfoEl.append(meta);
 
   if (!occupant && !terrainObject) {
     const empty = document.createElement("p");
-    empty.textContent = "No hay unidad en esta casilla.";
+    empty.textContent = "No unit on this tile.";
     tileInfoEl.append(empty);
     return;
   }
@@ -1602,10 +2136,9 @@ function renderTileInfo() {
     const objectStats = document.createElement("div");
     objectStats.className = "inspect-grid";
     objectStats.innerHTML = `
-      <div><strong>Objeto</strong>${terrainObject.name}</div>
-      <div><strong>Tipo</strong>${terrainObject.type === "pillar" ? "Pilar" : "Cubo"}</div>
-      <div><strong>Vida</strong>${terrainObject.hp}/${terrainObject.maxHp}</div>
-      <div><strong>Bloquea</strong>Movimiento</div>
+      <div><strong>Object</strong>${terrainObject.name}</div>
+      <div><strong>Type</strong>${terrainObject.type === "pillar" ? "Pillar" : "Cube"}</div>
+      <div><strong>Blocks</strong>Movement</div>
     `;
     tileInfoEl.append(objectStats);
   }
@@ -1615,28 +2148,31 @@ function renderTileInfo() {
   const stats = document.createElement("div");
   stats.className = "inspect-grid";
   stats.innerHTML = `
-    <div><strong>Unidad</strong>${occupant.name}</div>
-    <div><strong>Equipo</strong>${occupant.team === "blue" ? "Azul" : "Rojo"}</div>
-    <div><strong>Vida</strong>${occupant.hp}/${occupant.maxHp}</div>
+    <div><strong>Unit</strong>${occupant.name}</div>
+    <div><strong>Team</strong>${occupant.team === "blue" ? "Blue" : "Red"}</div>
+    <div><strong>HP</strong>${occupant.hp}/${occupant.maxHp}</div>
     <div><strong>CE</strong>${ceLabel(occupant)}</div>
-    <div><strong>Ataque</strong>${effectiveAttack(occupant)}</div>
-    <div><strong>Defensa</strong>${defenseLabel(occupant)}</div>
-    <div><strong>Movilidad</strong>${occupant.mobility}</div>
-    <div><strong>Velocidad</strong>${effectiveSpeed(occupant)}</div>
-    ${occupant.stance ? `<div><strong>Postura</strong>${stanceLabel(occupant)}</div>` : ""}
-    ${occupant.weapon ? `<div><strong>Arma</strong>${weaponName(occupant.weapon)}</div>` : ""}
-    ${occupant.poisonStacks ? `<div><strong>Veneno</strong>${occupant.poisonStacks}/${POISON_MAX_STACKS} - ${occupant.poisonTurnsRemaining}t</div>` : ""}
-    ${occupant.bleedingTurnsRemaining ? `<div><strong>Sangrado</strong>${occupant.bleedingTurnsRemaining}t</div>` : ""}
+    <div><strong>Attack</strong>${effectiveAttack(occupant)}</div>
+    <div><strong>Defense</strong>${defenseLabel(occupant)}</div>
+    <div><strong>Mobility</strong>${occupant.mobility}</div>
+    <div><strong>Speed</strong>${effectiveSpeed(occupant)}</div>
+    ${occupant.stance ? `<div><strong>Stance</strong>${stanceLabel(occupant)}</div>` : ""}
+    ${occupant.weapon ? `<div><strong>Weapon</strong>${weaponName(occupant.weapon)}</div>` : ""}
+    ${occupant.poisonStacks ? `<div><strong>Poison</strong>${occupant.poisonStacks}/${POISON_MAX_STACKS} - ${occupant.poisonTurnsRemaining}t</div>` : ""}
+    ${occupant.bleedingTurnsRemaining ? `<div><strong>Bleeding</strong>${occupant.bleedingStacks || 1} - ${occupant.bleedingTurnsRemaining}t</div>` : ""}
+    ${occupant.idleTransfigurationTurns ? `<div><strong>Mark</strong>${occupant.idleTransfigurationTurns}t</div>` : ""}
     ${occupant.focus !== null ? `<div><strong>Focus</strong>${occupant.focus}/5</div>` : ""}
-    ${hasYujiInBattle() ? `<div><strong>Dedos</strong>${occupant.sukunaFingers}</div>` : ""}
-    ${hasYujiInBattle() ? `<div><strong>Entregados</strong>${totalFingerContributions(occupant)}</div>` : ""}
-    ${hasYujiInBattle() && isYuji(occupant) ? `<div><strong>Consumidos</strong>${yujiFingerState(occupant)?.consumed ?? 0}</div>` : ""}
+    ${isMahito(occupant) ? `<div><strong>Black Flash</strong>${occupant.mahitoBlackFlashes}/2</div>` : ""}
+    ${isMahitoTransformed(occupant) ? `<div><strong>Form</strong>Transformed</div>` : ""}
+    ${hasYujiInBattle() ? `<div><strong>Fingers</strong>${occupant.sukunaFingers}</div>` : ""}
+    ${hasYujiInBattle() ? `<div><strong>Given</strong>${totalFingerContributions(occupant)}</div>` : ""}
+    ${hasYujiInBattle() && isYuji(occupant) ? `<div><strong>Consumed</strong>${yujiFingerState(occupant)?.consumed ?? 0}</div>` : ""}
   `;
   tileInfoEl.append(stats);
 
   const abilities = document.createElement("p");
-  abilities.innerHTML = `<strong>Habilidades</strong> ${getAbilities(occupant)
-    .map((ability) => `${ability.name} (${ability.type === "attack" ? "ataque" : "apoyo"})`)
+  abilities.innerHTML = `<strong>Techniques</strong> ${getAbilities(occupant)
+    .map((ability) => `${ability.name} (${ability.type === "attack" ? "attack" : "support"})`)
     .join(", ")}`;
   tileInfoEl.append(abilities);
 }
@@ -1652,6 +2188,15 @@ function handleTileClick(x, y, z) {
   const ability = selectedAbility();
 
   if (occupant) state.inspectedUnitId = occupant.id;
+
+  if (state.awaitingSharedActor) {
+    if (occupant && state.sharedActorTargets.has(tileKey)) {
+      switchSharedActor(occupant.id);
+      return;
+    }
+    render();
+    return;
+  }
 
   if (state.selectedAction === "attack" && occupant?.team === enemyTeam(unit.team)) {
     useOffense(occupant);
@@ -1676,8 +2221,68 @@ function handleTileClick(x, y, z) {
       useAreaAttackAbility(x, y, z);
       return;
     }
+    if (ability.type === "unitAreaAttack" && occupant?.team === enemyTeam(unit.team)) {
+      useUnitAreaAttackAbility(occupant);
+      return;
+    }
+    if (ability.type === "summonDrop") {
+      useMaxElephantSummon(x, y, z);
+      return;
+    }
+    if (ability.type === "summonUnit") {
+      useDirectSummon(x, y, z);
+      return;
+    }
+    if (ability.type === "summonPair") {
+      usePairSummon(x, y, z);
+      return;
+    }
+    if (ability.type === "worldCuttingSlash") {
+      useWorldCuttingSlash(x, y, z);
+      return;
+    }
     if (ability.type === "teleport") {
       useTeleportAbility(x, y, z);
+      return;
+    }
+    if (ability.type === "distortedMove") {
+      useDistortedWorm(x, y, z);
+      return;
+    }
+    if (ability.type === "predatorDash") {
+      usePredatorDash(x, y, z);
+      return;
+    }
+    if (ability.type === "boogieSwap" && occupant) {
+      useBoogieWoogie(occupant);
+      return;
+    }
+    if (ability.type === "forcedSwap" && occupant) {
+      useForcedSwapTarget(occupant);
+      return;
+    }
+    if (ability.type === "soulTouch" && occupant?.team === enemyTeam(unit.team)) {
+      useSoulTouch(occupant);
+      return;
+    }
+    if (ability.type === "idleTransfiguration" && occupant?.team === enemyTeam(unit.team)) {
+      useIdleTransfiguration(occupant);
+      return;
+    }
+    if (ability.type === "blindSpotStrike" && occupant?.team === enemyTeam(unit.team)) {
+      useBlindSpotStrike(occupant);
+      return;
+    }
+    if (ability.type === "mahitoDomain" && occupant?.id === unit.id) {
+      useMahitoDomain(ability);
+      return;
+    }
+    if (ability.type === "mahitoTransform" && occupant?.id === unit.id) {
+      useMahitoTransformation(ability);
+      return;
+    }
+    if (ability.type === "summonMahoraga" && occupant?.id === unit.id) {
+      summonMahoraga(unit, ability);
       return;
     }
     if (ability.type === "self" && occupant?.id === unit.id) {
@@ -1698,12 +2303,14 @@ function handleTileClick(x, y, z) {
     settleUnitPosition(unit);
     unit.moved = true;
     queueVisualEvent("move", { unitId: unit.id, from, to: { x: unit.x, y: unit.y, z: unit.z } });
-    addLog(`${unit.name} se mueve a ${unit.x + 1},${unit.y + 1} en nivel ${unit.z + 1}.`);
+    addLog(`${unit.name} moves to ${unit.x + 1},${unit.y + 1} on floor ${unit.z + 1}.`);
     calculateRanges();
     state.selectedAction = state.attackable.size ? "attack" : "move";
     state.selectedAbilityId = null;
     state.abilityMenuOpen = false;
     state.pendingTransfer = null;
+    state.pendingSwap = null;
+    state.pendingSummon = null;
     render();
     return;
   }
@@ -1720,8 +2327,8 @@ function changePreviewLevel(direction) {
 
 function expireTurnEffects(unit) {
   const effects = unit.activeEffects;
-  if (effects.simpleDomain) addLog(`Dominio simple de ${unit.name} termina.`);
-  if (effects.counterattack) addLog(`Contraataque de ${unit.name} termina.`);
+  if (effects.simpleDomain) addLog(`${unit.name}'s Simple Domain ends.`);
+  if (effects.counterattack) addLog(`${unit.name}'s Counterattack ends.`);
   unit.activeEffects = {};
 }
 
@@ -1731,7 +2338,7 @@ function processEndOfTurnReactions(endingUnit) {
   for (const defender of livingUnits()) {
     if (defender.team === endingUnit.team || !defender.activeEffects.simpleDomain) continue;
     if (!isAdjacent8(defender, endingUnit)) continue;
-    performAttack(defender, endingUnit, "Dominio simple", { triggersCounterattack: false });
+    performAttack(defender, endingUnit, "Simple Domain", { triggersCounterattack: false });
     if (endingUnit.hp === 0) break;
   }
 }
@@ -1741,7 +2348,7 @@ function recoverDedicationCe(unit) {
   const amount = Math.floor(Math.random() * 11) + 5;
   const before = unit.ce;
   unit.ce = Math.min(unit.maxCe, unit.ce + amount);
-  addLog(`${unit.name} activa Dedicacion y recupera ${unit.ce - before} CE.`);
+  addLog(`${unit.name} activates Dedication and restores ${unit.ce - before} CE.`);
 }
 
 function gainFocusAfterAttack(unit) {
@@ -1750,7 +2357,7 @@ function gainFocusAfterAttack(unit) {
   const before = unit.focus;
   unit.focus = Math.min(passive.maxFocus, unit.focus + 1);
   unit.attackedThisTurn = true;
-  if (unit.focus !== before) addLog(`${unit.name} gana 1 Focus (${unit.focus}/${passive.maxFocus}).`);
+  if (unit.focus !== before) addLog(`${unit.name} gains 1 Focus (${unit.focus}/${passive.maxFocus}).`);
 }
 
 function processFocusEndOfTurn(unit) {
@@ -1758,7 +2365,7 @@ function processFocusEndOfTurn(unit) {
   if (passive?.id !== "focus" || unit.attackedThisTurn || unit.focus <= 0) return;
   const before = unit.focus;
   unit.focus = Math.max(0, unit.focus - 2);
-  addLog(`${unit.name} pierde ${before - unit.focus} Focus por no atacar.`);
+  addLog(`${unit.name} loses ${before - unit.focus} Focus for not attacking.`);
 }
 
 function tickSupernovaDuration(unit) {
@@ -1770,7 +2377,7 @@ function tickSupernovaDuration(unit) {
 
   state.supernovas = state.supernovas.filter((entry) => entry.id !== orb.id);
   setAbilityCooldown(unit, data.abilities.supernova);
-  addLog(`Supernova de ${unit.name} desaparece.`);
+  addLog(`${unit.name}'s Supernova disappears.`);
 }
 
 function transformYujiIntoSukuna(yuji) {
@@ -1780,24 +2387,25 @@ function transformYujiIntoSukuna(yuji) {
   yuji.defeated = false;
   yuji.hp = Math.max(1, Math.ceil(yuji.maxHp * 0.4));
   yuji.activeEffects.sukuna = true;
-  addLog(`${yuji.name} se transforma en Sukuna.`);
+  addLog(`${yuji.name} transforms into Sukuna.`);
 
   const targets = livingUnits().filter((unit) => unit.id !== yuji.id && unit.z === yuji.z);
   for (const target of targets) {
     const contribution = contributionCountForYuji(target, yuji);
     const reduction = Math.min(1, contribution * SUKUNA_FINGER_DAMAGE_REDUCTION);
     const rawDamage = Math.max(1, Math.floor(effectiveAttack(yuji) * SUKUNA_TRANSFORM_ATTACK_MULTIPLIER - effectiveDefense(target)));
-    const damage = Math.max(0, Math.floor(rawDamage * (1 - reduction)));
+    const damage = adaptedDamage(target, Math.max(0, Math.floor(rawDamage * (1 - reduction))), "slashing");
     const wasAlive = target.hp > 0;
     target.hp = Math.max(0, target.hp - damage);
+    recordMegumiDamage(target, yuji);
     queueVisualEvent("hit", {
       attackerId: yuji.id,
       targetId: target.id,
-      label: "Transformacion de Sukuna",
+      label: "Sukuna Transformation",
       damage,
       sukunaTransformation: true,
     });
-    addLog(`Sukuna golpea a ${target.name}: ${damage} dano${contribution ? ` (${contribution} dedos entregados)` : ""}.`);
+    addLog(`Sukuna strikes ${target.name}: ${damage} damage${contribution ? ` (${contribution} fingers given)` : ""}.`);
     if (wasAlive && target.hp === 0) handleUnitDefeated(target);
   }
 }
@@ -1806,25 +2414,32 @@ function performAttack(attacker, target, label, options = {}) {
   const attackMultiplier = options.attackMultiplier ?? 1;
   const triggersCounterattack = options.triggersCounterattack ?? true;
   const canBlackFlash = options.canBlackFlash ?? false;
-  const blackFlash = canBlackFlash && getPassive(attacker)?.id === "focus" && Math.random() < focusChance(attacker);
-  const damageMultiplier = blackFlash ? getPassive(attacker).blackFlashDamageMultiplier : 1;
+  const blackFlash = canBlackFlash && Math.random() < blackFlashChance(attacker, target);
+  const damageMultiplier = blackFlash ? blackFlashDamageMultiplier(attacker) : 1;
   const targetDefenseMultiplier = options.targetDefenseMultiplier ?? 1;
-  const targetDefense = isTerrainObject(target) ? 0 : Math.floor(effectiveDefense(target, { ignoreActiveEffects: options.ignoreDefensiveEffects }) * targetDefenseMultiplier);
-  const damage = Math.max(
+  const defensePierce = attacker?.isMahoraga ? Math.min(MAHORAGA_MAX_DEFENSE_PIERCE_STACKS, attacker.defensePierceStacks ?? 0) * MAHORAGA_DEFENSE_PIERCE_PER_STACK : 0;
+  const targetDefense = isTerrainObject(target) ? 0 : Math.floor(effectiveDefense(target, { ignoreActiveEffects: options.ignoreDefensiveEffects }) * targetDefenseMultiplier * (1 - defensePierce));
+  const damageType = options.damageType ?? attacker.damageType ?? "strike";
+  let damage = Math.max(
     1,
     Math.floor((effectiveAttack(attacker) * attackMultiplier - targetDefense) * damageMultiplier * poisonDamageMultiplier(attacker, target)),
   );
+  damage = adaptedDamage(target, damage, damageType);
 
   const wasAlive = target.hp > 0;
   target.hp = Math.max(0, target.hp - damage);
+  recordMegumiDamage(target, attacker);
+  if (attacker?.isMahoraga) attacker.defensePierceStacks = Math.min(MAHORAGA_MAX_DEFENSE_PIERCE_STACKS, (attacker.defensePierceStacks ?? 0) + 1);
   queueVisualEvent("hit", {
     attackerId: attacker.id,
     targetId: target.id,
     label,
     damage,
     blackFlash,
+    damageType,
   });
-  addLog(`${attacker.name} usa ${blackFlash ? "Black Flash" : label} contra ${target.name}: ${damage} dano.`);
+  addLog(`${attacker.name} uses ${blackFlash ? "Black Flash" : label} against ${target.name}: ${damage} damage.`);
+  resolveBlackFlashAfterAttack(attacker, blackFlash);
   if (wasAlive && target.hp === 0) {
     if (isTerrainObject(target)) handleTerrainDestroyed(target);
     else handleUnitDefeated(target);
@@ -1832,11 +2447,323 @@ function performAttack(attacker, target, label, options = {}) {
   }
 
   if (options.appliesPoison && !isTerrainObject(target)) applyPoison(target);
-  if (options.appliesBleeding && !isTerrainObject(target)) applyBleeding(target);
+  if (options.appliesBleeding && !isTerrainObject(target)) applyBleeding(target, { stacking: Boolean(options.stackingBleeding) });
   if (options.knockback && !isTerrainObject(target)) pushTarget(attacker, target, options.knockback);
+  if (isMahitoTransformed(target) && !isTerrainObject(target)) {
+    target.ce = Math.max(0, target.ce - damage);
+    addLog(`${target.name} loses ${damage} CE to maintain their form.`);
+    if (target.ce <= 0) endMahitoTransformation(target);
+  }
 
   if (triggersCounterattack && !isTerrainObject(target)) tryCounterattack(target, attacker);
   return damage;
+}
+
+function reserveSummonCe(megumi, amount) {
+  megumi.maxCe = Math.max(0, megumi.maxCe - amount);
+  megumi.ce = Math.min(megumi.ce, megumi.maxCe);
+}
+
+function restoreSummonCe(megumi, summon) {
+  megumi.maxCe += summon.reservedCe;
+  megumi.ce = Math.min(megumi.maxCe, megumi.ce + Math.max(0, summon.ce));
+}
+
+function setSummonDismissCooldown(megumi, summon) {
+  if (!summon.summonAbilityId) return;
+  megumi.abilityCooldowns[summon.summonAbilityId] = SUMMON_DISMISS_COOLDOWN_TURNS + 1;
+}
+
+function releaseSummonReservation(summon, options = {}) {
+  const megumi = summonerFor(summon);
+  if (!megumi || summon.reservationReleased) return;
+  summon.reservationReleased = true;
+  restoreSummonCe(megumi, summon);
+  if (options.died && !megumi.deadSummons.includes(summon.summonKind)) megumi.deadSummons.push(summon.summonKind);
+  if (options.cooldown) setSummonDismissCooldown(megumi, summon);
+}
+
+function dismissSummon(summon, options = {}) {
+  const megumi = summonerFor(summon);
+  if (!megumi || !summon || summon.hp <= 0) return;
+  releaseSummonReservation(summon, { cooldown: true, died: false });
+  summon.hp = 0;
+  summon.defeated = true;
+  summon.removed = true;
+  megumi.mustActPersonally = options.forceMegumi !== false;
+  state.currentUnitId = megumi.id;
+  state.previewLevel = megumi.z;
+  state.selectedAction = "move";
+  state.selectedAbilityId = null;
+  state.abilityMenuOpen = false;
+  addLog(`${megumi.name} dismisses ${summon.name}.`);
+  calculateRanges();
+  render();
+}
+
+function autoDismissDepletedSummon(summon) {
+  if (!isMegumiSummon(summon) || summon.ce > 0 || summon.removed) return;
+  const megumi = summonerFor(summon);
+  releaseSummonReservation(summon, { cooldown: true, died: false });
+  summon.hp = 0;
+  summon.defeated = true;
+  summon.removed = true;
+  if (megumi && state.currentUnitId === summon.id) state.currentUnitId = megumi.id;
+  addLog(`${summon.name} runs out of CE and disappears.`);
+}
+
+function spendSummonCe(summon, amount) {
+  if (!isMegumiSummon(summon)) return;
+  summon.ce = Math.max(0, summon.ce - amount);
+  autoDismissDepletedSummon(summon);
+}
+
+function defeatMegumiSummons(megumi) {
+  for (const summon of activeSummonsFor(megumi)) {
+    summon.hp = 0;
+    summon.defeated = true;
+    summon.removed = true;
+    releaseSummonReservation(summon, { died: true });
+    addLog(`${summon.name} dies when ${megumi.name} falls.`);
+  }
+}
+
+function validAdjacentSummonTiles(megumi, x = megumi.x, y = megumi.y, z = megumi.z) {
+  return [[0, -1], [1, 0], [0, 1], [-1, 0]]
+    .map(([dx, dy]) => ({ x: x + dx, y: y + dy, z }))
+    .filter((tile) =>
+      tile.x >= 0 && tile.x < SIZE
+      && tile.y >= 0 && tile.y < SIZE
+      && tile.z >= 0 && tile.z < LEVELS
+      && !unitAt(tile.x, tile.y, tile.z)
+      && !solidTerrainAt(tile.x, tile.y, tile.z)
+      && !holeAt(tile.x, tile.y, tile.z),
+    );
+}
+
+function canPlaceSummonAt(x, y, z) {
+  return x >= 0
+    && x < SIZE
+    && y >= 0
+    && y < SIZE
+    && z >= 0
+    && z < LEVELS
+    && !unitAt(x, y, z)
+    && !solidTerrainAt(x, y, z)
+    && !holeAt(x, y, z);
+}
+
+function createSummonUnit(megumi, templateKey, position) {
+  const template = MEGUMI_SUMMON_TEMPLATES[templateKey];
+  const summon = {
+    id: `${megumi.id}-${templateKey}-${state.units.length}`,
+    characterId: templateKey,
+    name: template.name,
+    cost: 0,
+    model: { shape: template.shape },
+    team: megumi.team,
+    x: position.x,
+    y: position.y,
+    z: position.z,
+    shape: template.shape,
+    facing: "south",
+    maxHp: template.maxHp,
+    hp: template.maxHp,
+    speed: template.speed,
+    attack: template.attack,
+    defense: template.defense,
+    mobility: template.mobility,
+    maxCe: template.maxCe,
+    ce: template.maxCe,
+    focus: null,
+    stance: null,
+    weapon: null,
+    weaponLocks: {},
+    poisonStacks: 0,
+    poisonTurnsRemaining: 0,
+    bleedingStacks: 0,
+    bleedingTurnsRemaining: 0,
+    idleTransfigurationTurns: 0,
+    mahitoBlackFlashes: 0,
+    mahitoUltimateUsed: false,
+    mahitoBaseStats: null,
+    megumiTurnsTaken: 0,
+    megumiDamageMemory: [],
+    mustActPersonally: false,
+    deadSummons: [],
+    sukunaFingers: 0,
+    attackedThisTurn: false,
+    abilityCooldowns: {},
+    activeEffects: {},
+    statuses: [...(template.statuses ?? [])],
+    isSummon: true,
+    summonerId: megumi.id,
+    summonKind: template.summonKind,
+    summonAbilityId: template.summonAbilityId,
+    reservedCe: template.reservedCe,
+    reservationReleased: false,
+    sharedTurnActed: false,
+    isMahoraga: false,
+    allowedTargetIds: [],
+    adaptations: {},
+    defensePierceStacks: 0,
+    removed: false,
+    defeated: false,
+    initiative: 0,
+    acted: false,
+    moved: false,
+    abilityIds: [...template.abilityIds],
+    damageType: template.damageType,
+  };
+  reserveSummonCe(megumi, summon.reservedCe);
+  state.units.push(summon);
+  return summon;
+}
+
+function finishMegumiSummonAbility(megumi, ability) {
+  setAbilityCooldown(megumi, ability);
+  megumi.acted = true;
+  megumi.moved = true;
+  state.selectedAction = "move";
+  state.selectedAbilityId = null;
+  state.abilityMenuOpen = false;
+  state.pendingSummon = null;
+  calculateRanges();
+  render();
+}
+
+function useDirectSummon(x, y, z) {
+  const megumi = currentUnit();
+  const ability = selectedAbility();
+  if (!megumi || !ability || ability.type !== "summonUnit" || megumi.acted || megumi.ce < ability.ceCost || abilityCooldown(megumi, ability.id) > 0) return;
+  if (!state.abilityTargets.has(key(x, y, z)) || !ability.summonTemplate) return;
+  createSummonUnit(megumi, ability.summonTemplate, { x, y, z });
+  addLog(`${megumi.name} summons ${MEGUMI_SUMMON_TEMPLATES[ability.summonTemplate].name}.`);
+  finishMegumiSummonAbility(megumi, ability);
+}
+
+function usePairSummon(x, y, z) {
+  const megumi = currentUnit();
+  const ability = selectedAbility();
+  if (!megumi || !ability || ability.type !== "summonPair" || megumi.acted || megumi.ce < ability.ceCost || abilityCooldown(megumi, ability.id) > 0) return;
+  if (!state.abilityTargets.has(key(x, y, z)) || !ability.summonTemplates?.length) return;
+
+  const pending = state.pendingSummon?.abilityId === ability.id
+    ? state.pendingSummon
+    : { abilityId: ability.id, positions: [] };
+  pending.positions.push({ x, y, z });
+  state.pendingSummon = pending;
+
+  if (pending.positions.length < ability.summonTemplates.length) {
+    const template = ability.summonTemplates[pending.positions.length - 1];
+    addLog(`${megumi.name} prepares ${MEGUMI_SUMMON_TEMPLATES[template].name}.`);
+    calculateRanges();
+    render();
+    return;
+  }
+
+  for (const [index, template] of ability.summonTemplates.entries()) {
+    createSummonUnit(megumi, template, pending.positions[index]);
+  }
+  addLog(`${megumi.name} summons Divine Dogs.`);
+  finishMegumiSummonAbility(megumi, ability);
+}
+
+function useMaxElephantSummon(x, y, z) {
+  const megumi = currentUnit();
+  const ability = selectedAbility();
+  if (!megumi || !ability || ability.type !== "summonDrop" || megumi.acted || megumi.ce < ability.ceCost || abilityCooldown(megumi, ability.id) > 0) return;
+  if (!state.abilityTargets.has(key(x, y, z))) return;
+  const landingTiles = validAdjacentSummonTiles(megumi, x, y, z);
+  if (!landingTiles.length) return;
+  const target = livingUnitAt(x, y, z);
+  if (target && target.team !== megumi.team) {
+    performAttack(megumi, target, ability.name, {
+      attackMultiplier: ability.attackMultiplier,
+      damageType: ability.damageType,
+      triggersCounterattack: false,
+      canBlackFlash: false,
+    });
+  }
+  createSummonUnit(megumi, "maxElephant", landingTiles[Math.floor(Math.random() * landingTiles.length)]);
+  addLog(`${megumi.name} summons Max Elephant.`);
+  finishMegumiSummonAbility(megumi, ability);
+}
+
+function createMahoraga(megumi, allowedTargets) {
+  const tiles = validAdjacentSummonTiles(megumi);
+  const position = tiles[0] ?? { x: megumi.x, y: megumi.y, z: megumi.z };
+  const mahoraga = {
+    id: `${megumi.id}-mahoraga`,
+    characterId: "mahoraga",
+    name: MAHORAGA_TEMPLATE.name,
+    cost: 0,
+    model: { shape: MAHORAGA_TEMPLATE.shape },
+    team: megumi.team,
+    x: position.x,
+    y: position.y,
+    z: position.z,
+    shape: MAHORAGA_TEMPLATE.shape,
+    facing: "south",
+    maxHp: MAHORAGA_TEMPLATE.maxHp,
+    hp: MAHORAGA_TEMPLATE.maxHp,
+    speed: MAHORAGA_TEMPLATE.speed,
+    attack: MAHORAGA_TEMPLATE.attack,
+    defense: MAHORAGA_TEMPLATE.defense,
+    mobility: MAHORAGA_TEMPLATE.mobility,
+    maxCe: 0,
+    ce: 0,
+    focus: null,
+    stance: null,
+    weapon: null,
+    weaponLocks: {},
+    poisonStacks: 0,
+    poisonTurnsRemaining: 0,
+    bleedingStacks: 0,
+    bleedingTurnsRemaining: 0,
+    idleTransfigurationTurns: 0,
+    sukunaFingers: 0,
+    attackedThisTurn: false,
+    abilityCooldowns: {},
+    activeEffects: {},
+    statuses: [],
+    isSummon: true,
+    summonerId: megumi.id,
+    summonKind: "mahoraga",
+    summonAbilityId: "summonMahoraga",
+    reservedCe: 0,
+    reservationReleased: true,
+    sharedTurnActed: false,
+    isMahoraga: true,
+    allowedTargetIds: allowedTargets.map((target) => target.id),
+    adaptations: {},
+    defensePierceStacks: 0,
+    removed: false,
+    defeated: false,
+    initiative: 0,
+    acted: false,
+    moved: false,
+    abilityIds: [...MAHORAGA_TEMPLATE.abilityIds],
+    damageType: MAHORAGA_TEMPLATE.damageType,
+  };
+  state.units.push(mahoraga);
+  return mahoraga;
+}
+
+function summonMahoraga(megumi, ability) {
+  if (!canSummonMahoraga(megumi)) return;
+  const allowedTargets = mahoragaRitualTargets(megumi);
+  megumi.ce -= ability.ceCost;
+  megumi.hp = 0;
+  handleUnitDefeated(megumi);
+  const mahoraga = createMahoraga(megumi, allowedTargets);
+  mahoraga.initiative = MAX_TURN;
+  state.currentUnitId = mahoraga.id;
+  state.turnControllerId = mahoraga.id;
+  state.previewLevel = mahoraga.z;
+  addLog(`${megumi.name} summons Mahoraga.`);
+  calculateRanges();
+  render();
 }
 
 function handleUnitDefeated(unit) {
@@ -1844,13 +2771,18 @@ function handleUnitDefeated(unit) {
   unit.defeated = true;
   unit.activeEffects = {};
   state.supernovas = state.supernovas.filter((orb) => orb.ownerId !== unit.id);
+  if (isMegumiSummon(unit)) {
+    releaseSummonReservation(unit, { died: true });
+    unit.removed = true;
+  }
+  if (isMegumi(unit)) defeatMegumiSummons(unit);
   dropFingersFromUnit(unit);
-  addLog(`${unit.name} queda fuera.`);
+  addLog(`${unit.name} is defeated.`);
 }
 
 function handleTerrainDestroyed(object) {
   state.terrainObjects = state.terrainObjects.filter((entry) => entry.id !== object.id);
-  addLog(`${object.name} se rompe.`);
+  addLog(`${object.name} breaks.`);
   if (object.type === "pillar") {
     const holeZ = object.z + 1;
     addHole(object.x, object.y, holeZ);
@@ -1861,7 +2793,7 @@ function handleTerrainDestroyed(object) {
 
 function tryCounterattack(defender, attacker) {
   if (!defender.activeEffects.counterattack || defender.hp <= 0 || attacker.hp <= 0) return;
-  performAttack(defender, attacker, "Contraataque", { triggersCounterattack: false });
+  performAttack(defender, attacker, "Counterattack", { triggersCounterattack: false });
   recoverDedicationCe(defender);
 }
 
@@ -1872,7 +2804,7 @@ function switchTojiWeapon(unit, ability) {
   unit.weaponLocks[ability.weaponId] = TOJI_WEAPON_LOCK_TURNS;
   state.abilityMenuOpen = false;
   state.selectedAbilityId = null;
-  addLog(`${unit.name} equipa ${weaponName(ability.weaponId)}.`);
+  addLog(`${unit.name} equips ${weaponName(ability.weaponId)}.`);
   calculateRanges();
   render();
 }
@@ -1916,6 +2848,7 @@ function useSweepingStrike(unit, ability) {
   for (const target of targets) {
     performAttack(unit, target, ability.name, {
       attackMultiplier: ability.attackMultiplier,
+      damageType: ability.damageType,
       triggersCounterattack: false,
       canBlackFlash: false,
     });
@@ -1925,7 +2858,15 @@ function useSweepingStrike(unit, ability) {
   state.abilityMenuOpen = false;
   state.selectedAbilityId = null;
   state.pendingTransfer = null;
+  state.pendingSwap = null;
+  state.pendingSummon = null;
+
   if (checkVictory()) {
+    render();
+    return;
+  }
+  if (beginSharedActorSelection(turnController())) {
+    calculateRanges();
     render();
     return;
   }
@@ -1937,13 +2878,17 @@ function useOffense(target) {
   const unit = currentUnit();
   const targetKey = key(target.x, target.y, target.z);
   if (!unit || unit.hp <= 0 || unit.acted || (!state.attackable.has(target.id) && !state.abilityTargets.has(targetKey))) return;
+  if (!canMahoragaTarget(unit, target)) return;
 
-  let label = "ataque normal";
+  const basicAttack = state.selectedAction !== "skill";
+  let label = "basic attack";
   let attackMultiplier = chosoBasicAttackMultiplier(unit, target);
   let canBlackFlash = true;
+  let damageType = unit.damageType ?? "strike";
   let targetDefenseMultiplier = 1;
   let appliesPoison = isChoso(unit) && unit.stance === "blood" && !isTerrainObject(target);
   let appliesBleeding = false;
+  let stackingBleeding = false;
   let knockback = 0;
   let ignoreDefensiveEffects = false;
   let triggersCounterattack = !(isChoso(unit) && unit.stance === "blood" && distance2d(unit, target.x, target.y) > 1);
@@ -1951,14 +2896,29 @@ function useOffense(target) {
   setFacingToward(unit, target.x, target.y);
 
   if (isChoso(unit)) {
-    label = unit.stance === "combat" ? "sangre endurecida" : "proyectil de sangre";
+    label = unit.stance === "combat" ? "Hardened Blood" : "Blood Projectile";
     canBlackFlash = false;
+    damageType = "strike";
   }
   if (isToji(unit) && unit.weapon === "invertedSpear") {
-    label = "Lanza invertida";
+    label = "Inverted Spear of Heaven";
     targetDefenseMultiplier = 0.5;
     ignoreDefensiveEffects = true;
     canBlackFlash = false;
+    damageType = "slashing";
+  }
+  if (isToji(unit) && unit.weapon === "splitSoulKatana") {
+    damageType = "slashing";
+  }
+  if (isToji(unit) && unit.weapon === "chainWeapon") {
+    damageType = "strike";
+  }
+  if (isMahitoTransformed(unit)) {
+    label = "Transfigured Slash";
+    canBlackFlash = false;
+    appliesBleeding = !isTerrainObject(target);
+    stackingBleeding = true;
+    damageType = "slashing";
   }
 
   if (state.selectedAction === "skill") {
@@ -1976,20 +2936,32 @@ function useOffense(target) {
     targetDefenseMultiplier = ability.defenseMultiplier ?? 1;
     appliesPoison = Boolean(ability.appliesPoison);
     appliesBleeding = Boolean(ability.appliesBleeding);
+    stackingBleeding = Boolean(ability.stackingBleeding);
+    damageType = ability.damageType ?? damageType;
     knockback = ability.knockback ?? 0;
     ignoreDefensiveEffects = Boolean(ability.ignoreDefensiveEffects);
     triggersCounterattack = false;
   }
 
-  performAttack(unit, target, label, { attackMultiplier, canBlackFlash, targetDefenseMultiplier, appliesPoison, appliesBleeding, knockback, ignoreDefensiveEffects, triggersCounterattack });
+  performAttack(unit, target, label, { attackMultiplier, canBlackFlash, targetDefenseMultiplier, appliesPoison, appliesBleeding, stackingBleeding, knockback, ignoreDefensiveEffects, triggersCounterattack, damageType });
+  if (basicAttack && isMegumiSummon(unit)) spendSummonCe(unit, SUMMON_BASIC_CE_LOSS);
   gainFocusAfterAttack(unit);
   unit.acted = true;
   unit.moved = true;
+  state.selectedAction = "move";
   state.selectedAbilityId = null;
   state.abilityMenuOpen = false;
   state.pendingTransfer = null;
+  state.pendingSwap = null;
+  state.pendingSummon = null;
 
   if (checkVictory()) {
+    render();
+    return;
+  }
+
+  if (beginSharedActorSelection(turnController())) {
+    calculateRanges();
     render();
     return;
   }
@@ -2031,6 +3003,7 @@ function useLineAttackAbility(unit, target, ability) {
       targetDefenseMultiplier: ability.defenseMultiplier ?? 1,
       appliesPoison: ability.appliesPoison,
       appliesBleeding: ability.appliesBleeding,
+      damageType: ability.damageType,
       knockback: ability.knockback ?? 0,
       ignoreDefensiveEffects: Boolean(ability.ignoreDefensiveEffects),
       triggersCounterattack: false,
@@ -2042,8 +3015,16 @@ function useLineAttackAbility(unit, target, ability) {
   state.selectedAbilityId = null;
   state.abilityMenuOpen = false;
   state.pendingTransfer = null;
+  state.pendingSwap = null;
+  state.pendingSummon = null;
 
   if (checkVictory()) {
+    render();
+    return;
+  }
+
+  if (beginSharedActorSelection(turnController())) {
+    calculateRanges();
     render();
     return;
   }
@@ -2081,17 +3062,74 @@ function useAreaAttackAbility(x, y, z) {
     performAttack(unit, target, ability.name, {
       attackMultiplier: ability.attackMultiplier,
       appliesPoison: ability.appliesPoison,
+      damageType: ability.damageType,
       triggersCounterattack: false,
       canBlackFlash: false,
     });
   }
+  if (isMegumiSummon(unit)) autoDismissDepletedSummon(unit);
   unit.acted = true;
   unit.moved = true;
   state.selectedAbilityId = null;
   state.abilityMenuOpen = false;
   state.pendingTransfer = null;
+  state.pendingSwap = null;
+  state.pendingSummon = null;
 
   if (checkVictory()) {
+    render();
+    return;
+  }
+
+  if (beginSharedActorSelection(turnController())) {
+    calculateRanges();
+    render();
+    return;
+  }
+
+  calculateRanges();
+  render();
+}
+
+function useUnitAreaAttackAbility(primaryTarget) {
+  const unit = currentUnit();
+  const ability = selectedAbility();
+  if (!unit || unit.hp <= 0 || !primaryTarget || !ability || ability.type !== "unitAreaAttack" || unit.acted || unit.ce < ability.ceCost || abilityCooldown(unit, ability.id) > 0) return;
+  if (!state.abilityTargets.has(key(primaryTarget.x, primaryTarget.y, primaryTarget.z))) return;
+
+  const targets = livingUnits().filter((target) =>
+    target.id !== unit.id
+    && target.z === primaryTarget.z
+    && Math.max(Math.abs(target.x - primaryTarget.x), Math.abs(target.y - primaryTarget.y)) <= ability.radius,
+  );
+  if (!targets.length) return;
+
+  unit.ce -= ability.ceCost;
+  setAbilityCooldown(unit, ability);
+  for (const target of targets) {
+    performAttack(unit, target, ability.name, {
+      attackMultiplier: ability.attackMultiplier,
+      damageType: ability.damageType,
+      triggersCounterattack: false,
+      canBlackFlash: false,
+    });
+  }
+  if (isMegumiSummon(unit)) autoDismissDepletedSummon(unit);
+  unit.acted = true;
+  unit.moved = true;
+  state.selectedAbilityId = null;
+  state.abilityMenuOpen = false;
+  state.pendingTransfer = null;
+  state.pendingSwap = null;
+  state.pendingSummon = null;
+
+  if (checkVictory()) {
+    render();
+    return;
+  }
+
+  if (beginSharedActorSelection(turnController())) {
+    calculateRanges();
     render();
     return;
   }
@@ -2118,12 +3156,13 @@ function placeSupernova(unit, ability, x, y, z) {
   state.selectedAbilityId = null;
   state.abilityMenuOpen = false;
   state.pendingTransfer = null;
-  addLog(`${unit.name} coloca Supernova en ${x + 1},${y + 1}, nivel ${z + 1}.`);
+  state.pendingSwap = null;
+  addLog(`${unit.name} places Supernova at ${x + 1},${y + 1}, floor ${z + 1}.`);
   calculateRanges();
   render();
 }
 
-function detonateSupernova(unit, orb, ability, reason = "activa") {
+function detonateSupernova(unit, orb, ability, reason = "detonates") {
   const targets = [
     ...livingUnits().filter((target) =>
       target.team !== unit.team
@@ -2143,6 +3182,7 @@ function detonateSupernova(unit, orb, ability, reason = "activa") {
     performAttack(unit, target, ability.name, {
       attackMultiplier: ability.attackMultiplier,
       appliesPoison: ability.appliesPoison,
+      damageType: ability.damageType,
       triggersCounterattack: false,
       canBlackFlash: false,
     });
@@ -2158,6 +3198,7 @@ function activateSupernova(unit) {
   state.selectedAbilityId = null;
   state.abilityMenuOpen = false;
   state.pendingTransfer = null;
+  state.pendingSwap = null;
 
   if (checkVictory()) {
     render();
@@ -2190,7 +3231,8 @@ function useSelfAbility(ability) {
   state.selectedAbilityId = null;
   state.abilityMenuOpen = false;
   state.pendingTransfer = null;
-  addLog(`${unit.name} usa ${ability.name}${unit.stance ? `: ${stanceLabel(unit)}` : ""}.`);
+  state.pendingSwap = null;
+  addLog(`${unit.name} uses ${ability.name}${unit.stance ? `: ${stanceLabel(unit)}` : ""}.`);
   recoverDedicationCe(unit);
   calculateRanges();
   render();
@@ -2205,10 +3247,12 @@ function useSupportAbility(x, y, z) {
   setAbilityCooldown(unit, ability);
   unit.acted = true;
   unit.moved = true;
+  state.selectedAction = "move";
   state.selectedAbilityId = null;
   state.abilityMenuOpen = false;
   state.pendingTransfer = null;
-  addLog(`${unit.name} usa ${ability.name} en ${x + 1},${y + 1}, nivel ${z + 1}.`);
+  state.pendingSwap = null;
+  addLog(`${unit.name} uses ${ability.name} at ${x + 1},${y + 1}, floor ${z + 1}.`);
   calculateRanges();
   render();
 }
@@ -2232,10 +3276,313 @@ function useTeleportAbility(x, y, z) {
   state.selectedAbilityId = null;
   state.abilityMenuOpen = false;
   state.pendingTransfer = null;
+  state.pendingSwap = null;
   queueVisualEvent("move", { unitId: unit.id, from, to: { x: unit.x, y: unit.y, z: unit.z } });
-  addLog(`${unit.name} usa ${ability.name} a ${unit.x + 1},${unit.y + 1}, nivel ${unit.z + 1}.`);
+  addLog(`${unit.name} uses ${ability.name} to ${unit.x + 1},${unit.y + 1}, floor ${unit.z + 1}.`);
   calculateRanges();
   render();
+}
+
+function canSwapInto(unit, x, y, z, swapPartner) {
+  if (x < 0 || x >= SIZE || y < 0 || y >= SIZE || z < 0 || z >= LEVELS) return false;
+  const occupant = unitAt(x, y, z);
+  if (occupant && occupant.id !== unit.id && occupant.id !== swapPartner.id) return false;
+  if (solidTerrainAt(x, y, z)) return false;
+  if (holeAt(x, y, z) && !isFlying(unit)) return false;
+  return true;
+}
+
+function canSwapUnits(first, second) {
+  if (!first || !second || first.id === second.id || first.hp <= 0 || second.hp <= 0) return false;
+  return canSwapInto(first, second.x, second.y, second.z, second)
+    && canSwapInto(second, first.x, first.y, first.z, first);
+}
+
+function swapUnits(first, second, label) {
+  const firstFrom = { x: first.x, y: first.y, z: first.z };
+  const secondFrom = { x: second.x, y: second.y, z: second.z };
+  first.x = secondFrom.x;
+  first.y = secondFrom.y;
+  first.z = secondFrom.z;
+  second.x = firstFrom.x;
+  second.y = firstFrom.y;
+  second.z = firstFrom.z;
+  settleUnitPosition(first);
+  settleUnitPosition(second);
+  queueVisualEvent("move", { unitId: first.id, from: firstFrom, to: { x: first.x, y: first.y, z: first.z } });
+  queueVisualEvent("move", { unitId: second.id, from: secondFrom, to: { x: second.x, y: second.y, z: second.z } });
+  addLog(`${label}: ${first.name} swaps position with ${second.name}.`);
+}
+
+function finishSwapAbility(unit, ability) {
+  unit.ce -= ability.ceCost;
+  setAbilityCooldown(unit, ability);
+  unit.acted = true;
+  unit.moved = true;
+  state.selectedAction = "move";
+  state.selectedAbilityId = null;
+  state.abilityMenuOpen = false;
+  state.pendingTransfer = null;
+  state.pendingSwap = null;
+  calculateRanges();
+  render();
+}
+
+function useBoogieWoogie(target) {
+  const unit = currentUnit();
+  const ability = selectedAbility();
+  if (!unit || !target || !ability || ability.type !== "boogieSwap" || unit.acted || unit.ce < ability.ceCost || abilityCooldown(unit, ability.id) > 0) return;
+  if (!state.abilityTargets.has(key(target.x, target.y, target.z)) || !canSwapUnits(unit, target)) return;
+
+  setFacingToward(unit, target.x, target.y);
+  swapUnits(unit, target, ability.name);
+  finishSwapAbility(unit, ability);
+}
+
+function useForcedSwapTarget(target) {
+  const unit = currentUnit();
+  const ability = selectedAbility();
+  if (!unit || !target || !ability || ability.type !== "forcedSwap" || unit.acted || unit.ce < ability.ceCost || abilityCooldown(unit, ability.id) > 0) return;
+  if (!state.abilityTargets.has(key(target.x, target.y, target.z)) || target.id === unit.id) return;
+
+  if (state.pendingSwap?.abilityId !== ability.id) {
+    state.pendingSwap = { abilityId: ability.id, firstTargetId: target.id };
+    addLog(`${unit.name} prepares ${ability.name}: choose another unit.`);
+    calculateRanges();
+    render();
+    return;
+  }
+
+  const firstTarget = livingUnits().find((entry) => entry.id === state.pendingSwap.firstTargetId);
+  if (!firstTarget || firstTarget.id === target.id || !canSwapUnits(firstTarget, target)) return;
+
+  setFacingToward(unit, target.x, target.y);
+  swapUnits(firstTarget, target, ability.name);
+  finishSwapAbility(unit, ability);
+}
+
+function finishMahitoAbility(unit, ability) {
+  setAbilityCooldown(unit, ability);
+  unit.acted = true;
+  unit.moved = true;
+  state.selectedAction = "move";
+  state.selectedAbilityId = null;
+  state.abilityMenuOpen = false;
+  state.pendingTransfer = null;
+  state.pendingSwap = null;
+  if (checkVictory()) {
+    render();
+    return;
+  }
+  calculateRanges();
+  render();
+}
+
+function soulTouchThreshold(target, ability) {
+  return target.idleTransfigurationTurns ? ability.markedExecutionThreshold : ability.executionThreshold;
+}
+
+function applySoulTouch(user, target, ability, sourceName = ability.name) {
+  const threshold = soulTouchThreshold(target, ability);
+  if (target.ce < threshold) {
+    target.hp = 0;
+    handleUnitDefeated(target);
+    addLog(`${sourceName} executes ${target.name} below ${threshold} CE.`);
+    return;
+  }
+
+  const before = target.ce;
+  target.ce = Math.max(0, target.ce - ability.ceDrain);
+  addLog(`${user.name} uses ${sourceName}: ${target.name} loses ${before - target.ce} CE.`);
+}
+
+function useSoulTouch(target) {
+  const unit = currentUnit();
+  const ability = selectedAbility();
+  if (!unit || !target || !ability || ability.type !== "soulTouch" || unit.acted || unit.ce < ability.ceCost || abilityCooldown(unit, ability.id) > 0) return;
+  if (!state.abilityTargets.has(key(target.x, target.y, target.z))) return;
+
+  unit.ce -= ability.ceCost;
+  setFacingToward(unit, target.x, target.y);
+  applySoulTouch(unit, target, ability);
+  finishMahitoAbility(unit, ability);
+}
+
+function useIdleTransfiguration(target) {
+  const unit = currentUnit();
+  const ability = selectedAbility();
+  if (!unit || !target || !ability || ability.type !== "idleTransfiguration" || unit.acted || unit.ce < ability.ceCost || abilityCooldown(unit, ability.id) > 0) return;
+  if (!state.abilityTargets.has(key(target.x, target.y, target.z))) return;
+
+  unit.ce -= ability.ceCost;
+  setFacingToward(unit, target.x, target.y);
+  target.idleTransfigurationTurns = ability.markTurns;
+  addLog(`${unit.name} marks ${target.name} with Idle Transfiguration.`);
+  finishMahitoAbility(unit, ability);
+}
+
+function useDistortedWorm(x, y, z) {
+  const unit = currentUnit();
+  const ability = selectedAbility();
+  if (!unit || !ability || ability.type !== "distortedMove" || unit.acted || unit.ce < ability.ceCost || abilityCooldown(unit, ability.id) > 0) return;
+  if (!state.abilityTargets.has(key(x, y, z))) return;
+
+  const from = { x: unit.x, y: unit.y, z: unit.z };
+  unit.ce -= ability.ceCost;
+  unit.x = x;
+  unit.y = y;
+  unit.z = z;
+  settleUnitPosition(unit);
+  state.previewLevel = unit.z;
+  queueVisualEvent("move", { unitId: unit.id, from, to: { x: unit.x, y: unit.y, z: unit.z } });
+  addLog(`${unit.name} uses ${ability.name} to ${unit.x + 1},${unit.y + 1}, floor ${unit.z + 1}.`);
+  finishMahitoAbility(unit, ability);
+}
+
+function useMahitoDomain(ability) {
+  const unit = currentUnit();
+  if (!unit || !ability || ability.type !== "mahitoDomain" || unit.acted || unit.ce < ability.ceCost || abilityCooldown(unit, ability.id) > 0) return;
+
+  unit.ce -= ability.ceCost;
+  unit.mahitoUltimateUsed = true;
+  const soulTouch = data.abilities.soulTouch;
+  const targets = livingUnits().filter((target) =>
+    target.team !== unit.team
+    && target.z === unit.z
+    && Math.max(Math.abs(target.x - unit.x), Math.abs(target.y - unit.y)) <= ability.radius,
+  );
+  addLog(`${unit.name} opens Self-Embodiment of Perfection.`);
+  for (const target of targets) applySoulTouch(unit, target, soulTouch, ability.name);
+  finishMahitoAbility(unit, ability);
+}
+
+function useMahitoTransformation(ability) {
+  const unit = currentUnit();
+  if (!unit || !ability || ability.type !== "mahitoTransform" || unit.acted || abilityCooldown(unit, ability.id) > 0) return;
+
+  if (!unit.mahitoBaseStats) {
+    unit.mahitoBaseStats = {
+      attack: unit.attack,
+      defense: unit.defense,
+      speed: unit.speed,
+      maxCe: unit.maxCe,
+    };
+  }
+  unit.mahitoUltimateUsed = true;
+  unit.maxCe = MAHITO_TRANSFORM_CE;
+  unit.ce = MAHITO_TRANSFORM_CE;
+  unit.attack = 21;
+  unit.defense = 10;
+  unit.speed = 28;
+  unit.activeEffects.mahitoTransformed = true;
+  unit.activeEffects.mahitoDepleted = false;
+  addLog(`${unit.name} transforms into Instant Spirit Body of Distorted Killing.`);
+  finishMahitoAbility(unit, ability);
+}
+
+function pathCellsBetween(unit, x, y) {
+  const dx = Math.sign(x - unit.x);
+  const dy = Math.sign(y - unit.y);
+  if (dx && dy) return [];
+  if (!dx && !dy) return [];
+  const distance = Math.abs(x - unit.x) + Math.abs(y - unit.y);
+  const cells = [];
+  for (let step = 1; step <= distance; step += 1) {
+    cells.push({ x: unit.x + dx * step, y: unit.y + dy * step, z: unit.z });
+  }
+  return cells;
+}
+
+function usePredatorDash(x, y, z) {
+  const unit = currentUnit();
+  const ability = selectedAbility();
+  if (!unit || !ability || ability.type !== "predatorDash" || unit.acted || abilityCooldown(unit, ability.id) > 0) return;
+  if (!state.abilityTargets.has(key(x, y, z))) return;
+
+  const from = { x: unit.x, y: unit.y, z: unit.z };
+  const targets = pathCellsBetween(unit, x, y)
+    .map((cell) => livingUnitAt(cell.x, cell.y, z))
+    .filter((target) => target && target.team !== unit.team);
+  setFacingToward(unit, x, y);
+  unit.x = x;
+  unit.y = y;
+  unit.z = z;
+  for (const target of targets) {
+    performAttack(unit, target, ability.name, {
+      attackMultiplier: ability.attackMultiplier,
+      appliesBleeding: true,
+      stackingBleeding: true,
+      damageType: ability.damageType,
+      triggersCounterattack: false,
+      canBlackFlash: false,
+    });
+  }
+  queueVisualEvent("move", { unitId: unit.id, from, to: { x: unit.x, y: unit.y, z: unit.z } });
+  finishMahitoAbility(unit, ability);
+}
+
+function useWorldCuttingSlash(x, y, z) {
+  const unit = currentUnit();
+  const ability = selectedAbility();
+  if (!unit || !ability || ability.type !== "worldCuttingSlash" || unit.acted || !mahoragaCanUseWorldSlash(unit)) return;
+  if (!state.abilityTargets.has(key(x, y, z))) return;
+
+  const targets = livingUnits().filter((target) =>
+    target.team !== unit.team
+    && target.z === z
+    && canMahoragaTarget(unit, target),
+  );
+  for (const target of targets) {
+    performAttack(unit, target, ability.name, {
+      attackMultiplier: ability.attackMultiplier,
+      damageType: ability.damageType,
+      triggersCounterattack: false,
+      canBlackFlash: false,
+    });
+  }
+  unit.acted = true;
+  unit.moved = true;
+  state.selectedAction = "move";
+  state.selectedAbilityId = null;
+  state.abilityMenuOpen = false;
+  if (checkVictory()) {
+    render();
+    return;
+  }
+  calculateRanges();
+  render();
+}
+
+function validBlindSpotTiles(target, unit) {
+  return [[0, -1], [0, 1], [-1, 0], [1, 0]]
+    .map(([dx, dy]) => ({ x: target.x + dx, y: target.y + dy, z: target.z }))
+    .filter((tile) => canOccupyTile(unit, tile.x, tile.y, tile.z));
+}
+
+function useBlindSpotStrike(target) {
+  const unit = currentUnit();
+  const ability = selectedAbility();
+  if (!unit || !target || !ability || ability.type !== "blindSpotStrike" || unit.acted || abilityCooldown(unit, ability.id) > 0) return;
+  if (!state.abilityTargets.has(key(target.x, target.y, target.z))) return;
+
+  const options = validBlindSpotTiles(target, unit);
+  if (!options.length) return;
+  const destination = options[Math.floor(Math.random() * options.length)];
+  const from = { x: unit.x, y: unit.y, z: unit.z };
+  unit.x = destination.x;
+  unit.y = destination.y;
+  unit.z = destination.z;
+  setFacingToward(unit, target.x, target.y);
+  queueVisualEvent("move", { unitId: unit.id, from, to: { x: unit.x, y: unit.y, z: unit.z } });
+  performAttack(unit, target, ability.name, {
+    attackMultiplier: ability.attackMultiplier,
+    appliesBleeding: true,
+    stackingBleeding: true,
+    damageType: ability.damageType,
+    triggersCounterattack: false,
+    canBlackFlash: false,
+  });
+  finishMahitoAbility(unit, ability);
 }
 
 function transferFingersToYuji(unit, yuji, count) {
@@ -2243,7 +3590,7 @@ function transferFingersToYuji(unit, yuji, count) {
   if (!amount) return;
   unit.sukunaFingers -= amount;
   consumeFingersForYuji(yuji, amount, unit);
-  addLog(`${unit.name} entrega ${amount} dedo${amount === 1 ? "" : "s"} a ${yuji.name}.`);
+  addLog(`${unit.name} gives ${amount} finger${amount === 1 ? "" : "s"} to ${yuji.name}.`);
   render();
 }
 
@@ -2253,6 +3600,7 @@ function useSpecialAction() {
   if (!unit || !yuji) return;
   state.pendingTransfer = { unitId: unit.id, yujiId: yuji.id };
   state.abilityMenuOpen = false;
+  state.pendingSwap = null;
   render();
   transferAmountInput.focus();
   transferAmountInput.select();
@@ -2290,8 +3638,9 @@ function changeLevel(direction) {
   state.selectedAbilityId = null;
   state.abilityMenuOpen = false;
   state.pendingTransfer = null;
+  state.pendingSwap = null;
   queueVisualEvent("move", { unitId: unit.id, from, to: { x: unit.x, y: unit.y, z: unit.z } });
-  addLog(`${unit.name} ${direction < 0 ? "baja" : "sube"} al nivel ${unit.z + 1}.`);
+  addLog(`${unit.name} ${direction < 0 ? "goes down" : "goes up"} to floor ${unit.z + 1}.`);
   calculateRanges();
   render();
 }
@@ -2307,28 +3656,34 @@ function checkVictory() {
     stopInitiativeClock();
     state.gameOver = true;
     state.currentUnitId = null;
-    addLog(`Victoria del equipo ${winner === "blue" ? "Azul" : "Rojo"}.`);
+    addLog(`${winner === "blue" ? "Blue" : "Red"} Team wins.`);
     return true;
   }
   return false;
 }
 
 attackBtn.addEventListener("click", () => {
+  if (state.awaitingSharedActor) return;
   state.selectedAction = state.selectedAction === "attack" ? "move" : "attack";
   state.selectedAbilityId = null;
   state.abilityMenuOpen = false;
   state.pendingTransfer = null;
+  state.pendingSwap = null;
+  state.pendingSummon = null;
   calculateRanges();
   render();
 });
 
 skillBtn.addEventListener("click", () => {
+  if (state.awaitingSharedActor) return;
   state.abilityMenuOpen = !state.abilityMenuOpen;
   state.pendingTransfer = null;
   if (!state.abilityMenuOpen && state.selectedAction === "skill") {
     state.selectedAction = "move";
     state.selectedAbilityId = null;
   }
+  if (!state.abilityMenuOpen) state.pendingSwap = null;
+  if (!state.abilityMenuOpen) state.pendingSummon = null;
   if (!state.abilityMenuOpen) calculateRanges();
   render();
 });

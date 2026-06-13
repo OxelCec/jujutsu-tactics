@@ -71,17 +71,17 @@ test("can select both teams, choose the map, and start a battle", async () => {
   const dom = await loadGame();
   const { document } = dom.window;
 
-  clickButton(document, "Iniciar juego");
+  clickButton(document, "Start Game");
   clickRosterCard(document, "Miwa");
   clickRosterCard(document, "Yuji");
-  clickButton(document, "Equipo rojo");
+  clickButton(document, "Red Team");
 
   clickRosterCard(document, "Miwa");
   clickRosterCard(document, "Choso");
-  clickButton(document, "Elegir mapa");
+  clickButton(document, "Choose Map");
 
   clickButton(document, "Edificio destruido");
-  clickButton(document, "Empezar batalla");
+  clickButton(document, "Start Battle");
 
   assert.equal(document.querySelector("#setupScreen").classList.contains("hidden"), true);
   assert.equal(document.querySelector("#battlefield").classList.contains("hidden"), false);
@@ -96,10 +96,11 @@ test("can select both teams, choose the map, and start a battle", async () => {
   assert.equal(document.querySelectorAll(".unit.red-unit").length, 2);
   assert.equal(document.querySelectorAll(".terrain-object").length, 5);
   assert.equal(document.querySelectorAll(".terrain-object.pillar").length, 2);
+  assert.equal(document.querySelectorAll(".terrain-hp").length, 0);
   assert.equal(document.querySelectorAll(".tile.hole").length, 2);
   assert.equal(document.querySelectorAll(".finger-token").length, 7);
-  assert.match(document.querySelector("#teamList").textContent, /Equipo rojo/);
-  assert.match(document.querySelector("#teamList").textContent, /Equipo azul/);
+  assert.match(document.querySelector("#teamList").textContent, /Red Team/);
+  assert.match(document.querySelector("#teamList").textContent, /Blue Team/);
   assert.equal(document.querySelectorAll(".team-unit-button").length, 4);
 
   const chosoButton = [...document.querySelectorAll(".team-unit-button")].find((button) =>
@@ -108,9 +109,9 @@ test("can select both teams, choose the map, and start a battle", async () => {
   assert.ok(chosoButton, "Expected Choso in the team list");
   chosoButton.click();
   assert.equal(document.querySelector("#unitCard h2").textContent, "Choso");
-  assert.match(document.querySelector("#unitCard").textContent, /habilidades/);
-  assert.doesNotMatch(document.querySelector("#unitCard").textContent, /Velocidad\d+\/100/);
-  assert.match(document.querySelector("#log").textContent, /Empieza la batalla/);
+  assert.match(document.querySelector("#unitCard").textContent, /available techniques/);
+  assert.doesNotMatch(document.querySelector("#unitCard").textContent, /Speed\d+\/100/);
+  assert.match(document.querySelector("#log").textContent, /The battle begins/);
 
   dom.window.close();
 });
@@ -186,7 +187,7 @@ test("map terrain blocks movement, can be destroyed, and holes allow one-way des
 
   dom.window.eval(`
     const miwa = currentUnit();
-    miwa.statuses.push("volador");
+    miwa.statuses.push("flying");
     miwa.x = 3;
     miwa.y = 3;
     miwa.z = 0;
@@ -207,7 +208,7 @@ test("map terrain blocks movement, can be destroyed, and holes allow one-way des
     miwa.y = 5;
     miwa.z = 0;
     const pillar = terrainObjectAt(3, 5, 0);
-    performAttack(miwa, pillar, "ataque de prueba", { attackMultiplier: 10, triggersCounterattack: false });
+    performAttack(miwa, pillar, "test attack", { attackMultiplier: 10, triggersCounterattack: false });
   `);
   assert.equal(dom.window.eval("terrainObjectAt(3, 5, 0)"), undefined);
   assert.equal(dom.window.eval("Boolean(holeAt(3, 5, 1))"), true);
@@ -278,29 +279,29 @@ test("Sukuna Fingers only spawn when Yuji is selected, and only seven spawn with
   const noYujiDom = await loadGame();
   const noYujiDocument = noYujiDom.window.document;
 
-  clickButton(noYujiDocument, "Iniciar juego");
+  clickButton(noYujiDocument, "Start Game");
   clickRosterCard(noYujiDocument, "Miwa");
-  clickButton(noYujiDocument, "Equipo rojo");
+  clickButton(noYujiDocument, "Red Team");
   clickRosterCard(noYujiDocument, "Choso");
-  clickButton(noYujiDocument, "Elegir mapa");
-  clickButton(noYujiDocument, "Empezar batalla");
+  clickButton(noYujiDocument, "Choose Map");
+  clickButton(noYujiDocument, "Start Battle");
   noYujiDom.window.eval('stopInitiativeClock(); selectNextTurn([livingUnits().find((unit) => unit.team === "blue")]);');
 
   assert.equal(noYujiDocument.querySelectorAll(".finger-token").length, 0);
-  assert.doesNotMatch(noYujiDocument.querySelector("#teamList").textContent, /dedos|consumidos|dados/i);
-  assert.doesNotMatch(noYujiDocument.querySelector("#unitCard").textContent, /Dedos|Entregados|Consumidos/);
+  assert.doesNotMatch(noYujiDocument.querySelector("#teamList").textContent, /fingers|consumed|given/i);
+  assert.doesNotMatch(noYujiDocument.querySelector("#unitCard").textContent, /Fingers|Given|Consumed/);
   assert.equal(noYujiDocument.querySelector("#specialBtn").classList.contains("hidden"), true);
   noYujiDom.window.close();
 
   const twoYujiDom = await loadGame();
   const twoYujiDocument = twoYujiDom.window.document;
 
-  clickButton(twoYujiDocument, "Iniciar juego");
+  clickButton(twoYujiDocument, "Start Game");
   clickRosterCard(twoYujiDocument, "Yuji");
-  clickButton(twoYujiDocument, "Equipo rojo");
+  clickButton(twoYujiDocument, "Red Team");
   clickRosterCard(twoYujiDocument, "Yuji");
-  clickButton(twoYujiDocument, "Elegir mapa");
-  clickButton(twoYujiDocument, "Empezar batalla");
+  clickButton(twoYujiDocument, "Choose Map");
+  clickButton(twoYujiDocument, "Start Battle");
 
   assert.equal(twoYujiDocument.querySelectorAll(".finger-token").length, 7);
   twoYujiDom.window.close();
@@ -319,7 +320,7 @@ test("defeated units remain on the board and block movement", async () => {
     red.x = blue.x + 1;
     red.y = blue.y;
     red.z = blue.z;
-    performAttack(blue, red, "ataque normal", { attackMultiplier: 10, triggersCounterattack: false });
+    performAttack(blue, red, "basic attack", { attackMultiplier: 10, triggersCounterattack: false });
     calculateRanges();
     handleTileClick(red.x, red.y, red.z);
   `);
@@ -333,22 +334,578 @@ test("defeated units remain on the board and block movement", async () => {
 });
 
 function startMiwaMirrorBattle(document) {
-  clickButton(document, "Iniciar juego");
+  clickButton(document, "Start Game");
   clickRosterCard(document, "Miwa");
-  clickButton(document, "Equipo rojo");
+  clickButton(document, "Red Team");
   clickRosterCard(document, "Miwa");
-  clickButton(document, "Elegir mapa");
-  clickButton(document, "Empezar batalla");
+  clickButton(document, "Choose Map");
+  clickButton(document, "Start Battle");
 }
 
 function startTojiVsMiwaBattle(document) {
-  clickButton(document, "Iniciar juego");
+  clickButton(document, "Start Game");
   clickRosterCard(document, "Toji");
-  clickButton(document, "Equipo rojo");
+  clickButton(document, "Red Team");
   clickRosterCard(document, "Miwa");
-  clickButton(document, "Elegir mapa");
-  clickButton(document, "Empezar batalla");
+  clickButton(document, "Choose Map");
+  clickButton(document, "Start Battle");
 }
+
+function startTodoControlBattle(document) {
+  clickButton(document, "Start Game");
+  clickRosterCard(document, "Aoi Todo");
+  clickRosterCard(document, "Miwa");
+  clickButton(document, "Red Team");
+  clickRosterCard(document, "Choso");
+  clickButton(document, "Choose Map");
+  clickButton(document, "Start Battle");
+}
+
+function startMahitoVsChosoBattle(document) {
+  clickButton(document, "Start Game");
+  clickRosterCard(document, "Mahito");
+  clickButton(document, "Red Team");
+  clickRosterCard(document, "Choso");
+  clickButton(document, "Choose Map");
+  clickButton(document, "Start Battle");
+}
+
+function startMegumiVsChosoBattle(document) {
+  clickButton(document, "Start Game");
+  clickRosterCard(document, "Megumi");
+  clickButton(document, "Red Team");
+  clickRosterCard(document, "Choso");
+  clickButton(document, "Choose Map");
+  clickButton(document, "Start Battle");
+}
+
+test("Aoi Todo has controller stats and swaps units with Boogie Woogie", async () => {
+  const dom = await loadGame();
+  const { document } = dom.window;
+  startTodoControlBattle(document);
+
+  dom.window.eval(`
+    stopInitiativeClock();
+    const todo = livingUnits().find((unit) => unit.characterId === "todo");
+    const choso = livingUnits().find((unit) => unit.characterId === "choso");
+    selectNextTurn([todo]);
+    todo.x = 1;
+    todo.y = 1;
+    todo.z = 1;
+    choso.x = 3;
+    choso.y = 1;
+    choso.z = 1;
+    calculateRanges();
+  `);
+
+  assert.deepEqual(JSON.parse(dom.window.eval(`JSON.stringify((() => {
+    const todo = currentUnit();
+    return {
+      maxHp: todo.maxHp,
+      attack: todo.attack,
+      defense: todo.defense,
+      speed: todo.speed,
+      maxCe: todo.maxCe,
+    };
+  })())`)), {
+    maxHp: 84,
+    attack: 16,
+    defense: 7,
+    speed: 16,
+    maxCe: 100,
+  });
+  assert.match(document.querySelector("#unitCard").textContent, /Boogie Woogie/);
+  assert.match(document.querySelector("#unitCard").textContent, /Forced Swap/);
+
+  document.querySelector("#skillBtn").click();
+  clickAbility(document, "Boogie Woogie");
+  dom.window.eval("handleTileClick(3, 1, 1)");
+
+  assert.equal(dom.window.eval("currentUnit().x"), 3);
+  assert.equal(dom.window.eval('livingUnits().find((unit) => unit.characterId === "choso").x'), 1);
+  assert.equal(dom.window.eval("currentUnit().ce"), 80);
+  assert.equal(dom.window.eval('abilityCooldown(currentUnit(), "boogieWoogie")'), 5);
+  assert.equal(dom.window.eval("currentUnit().acted"), true);
+
+  dom.window.eval(`
+    const todo = currentUnit();
+    const miwa = livingUnits().find((unit) => unit.characterId === "miwa");
+    const choso = livingUnits().find((unit) => unit.characterId === "choso");
+    todo.x = 1;
+    todo.y = 1;
+    todo.z = 1;
+    todo.ce = 100;
+    todo.acted = false;
+    todo.moved = false;
+    todo.abilityCooldowns = {};
+    miwa.x = 2;
+    miwa.y = 1;
+    miwa.z = 1;
+    choso.x = 4;
+    choso.y = 1;
+    choso.z = 1;
+    calculateRanges();
+    render();
+  `);
+  document.querySelector("#skillBtn").click();
+  clickAbility(document, "Forced Swap");
+  dom.window.eval("handleTileClick(2, 1, 1)");
+
+  assert.equal(dom.window.eval("currentUnit().acted"), false);
+  assert.equal(dom.window.eval("currentUnit().ce"), 100);
+  assert.match(document.querySelector("#log").textContent, /choose another unit/);
+
+  dom.window.eval("handleTileClick(4, 1, 1)");
+
+  assert.equal(dom.window.eval('livingUnits().find((unit) => unit.characterId === "miwa").x'), 4);
+  assert.equal(dom.window.eval('livingUnits().find((unit) => unit.characterId === "choso").x'), 2);
+  assert.equal(dom.window.eval("currentUnit().x"), 1);
+  assert.equal(dom.window.eval("currentUnit().ce"), 65);
+  assert.equal(dom.window.eval('abilityCooldown(currentUnit(), "forcedSwap")'), 5);
+  assert.equal(dom.window.eval("currentUnit().acted"), true);
+
+  dom.window.close();
+});
+
+test("Mahito drains CE, marks targets, and executes with Soul Touch", async () => {
+  const dom = await loadGame();
+  const { document } = dom.window;
+  startMahitoVsChosoBattle(document);
+
+  dom.window.eval(`
+    stopInitiativeClock();
+    const mahito = livingUnits().find((unit) => unit.characterId === "mahito");
+    const choso = livingUnits().find((unit) => unit.characterId === "choso");
+    selectNextTurn([mahito]);
+    mahito.x = 1;
+    mahito.y = 1;
+    mahito.z = 1;
+    choso.x = 2;
+    choso.y = 1;
+    choso.z = 1;
+    calculateRanges();
+  `);
+
+  assert.deepEqual(JSON.parse(dom.window.eval(`JSON.stringify((() => {
+    const mahito = currentUnit();
+    return {
+      maxHp: mahito.maxHp,
+      attack: mahito.attack,
+      defense: mahito.defense,
+      speed: mahito.speed,
+      maxCe: mahito.maxCe,
+      passive: getPassive(mahito).id,
+    };
+  })())`)), {
+    maxHp: 102,
+    attack: 16,
+    defense: 8,
+    speed: 16,
+    maxCe: 100,
+    passive: "blackFlashPotential",
+  });
+
+  document.querySelector("#skillBtn").click();
+  clickAbility(document, "Soul Touch");
+  dom.window.eval("handleTileClick(2, 1, 1)");
+
+  assert.equal(dom.window.eval('livingUnits().find((unit) => unit.characterId === "choso").ce'), 70);
+  assert.equal(dom.window.eval("currentUnit().ce"), 55);
+  assert.equal(dom.window.eval("currentUnit().acted"), true);
+
+  dom.window.eval(`
+    const mahito = currentUnit();
+    const choso = livingUnits().find((unit) => unit.characterId === "choso");
+    mahito.ce = 100;
+    mahito.acted = false;
+    mahito.moved = false;
+    choso.ce = 100;
+    choso.x = mahito.x + 3;
+    choso.y = mahito.y;
+    choso.z = mahito.z;
+    calculateRanges();
+    render();
+  `);
+  document.querySelector("#skillBtn").click();
+  clickAbility(document, "Idle Transfiguration");
+  dom.window.eval("handleTileClick(4, 1, 1)");
+
+  assert.equal(dom.window.eval('livingUnits().find((unit) => unit.characterId === "choso").idleTransfigurationTurns'), 2);
+  assert.equal(dom.window.eval("currentUnit().ce"), 75);
+
+  dom.window.eval(`
+    const choso = livingUnits().find((unit) => unit.characterId === "choso");
+    selectNextTurn([choso]);
+  `);
+
+  assert.equal(dom.window.eval("currentUnit().ce"), 90);
+  assert.equal(dom.window.eval("currentUnit().idleTransfigurationTurns"), 1);
+
+  dom.window.eval(`
+    const mahito = livingUnits().find((unit) => unit.characterId === "mahito");
+    const choso = livingUnits().find((unit) => unit.characterId === "choso");
+    selectNextTurn([mahito]);
+    mahito.ce = 100;
+    choso.ce = 35;
+    choso.x = mahito.x + 1;
+    choso.y = mahito.y;
+    choso.z = mahito.z;
+    calculateRanges();
+    render();
+  `);
+  document.querySelector("#skillBtn").click();
+  clickAbility(document, "Soul Touch");
+  dom.window.eval("handleTileClick(2, 1, 1)");
+
+  assert.equal(dom.window.eval('unitAt(2, 1, 1).hp'), 0);
+  assert.match(document.querySelector("#log").textContent, /executes/);
+
+  dom.window.close();
+});
+
+test("Megumi reserves CE for Divine Dogs and shares his turn with summons", async () => {
+  const dom = await loadGame();
+  const { document } = dom.window;
+  startMegumiVsChosoBattle(document);
+
+  dom.window.eval(`
+    stopInitiativeClock();
+    const megumi = livingUnits().find((unit) => unit.characterId === "megumi");
+    selectNextTurn([megumi]);
+  `);
+
+  assert.deepEqual(JSON.parse(dom.window.eval(`JSON.stringify((() => {
+    const megumi = currentUnit();
+    return {
+      maxHp: megumi.maxHp,
+      attack: megumi.attack,
+      defense: megumi.defense,
+      speed: megumi.speed,
+      maxCe: megumi.maxCe,
+      damageType: megumi.damageType,
+    };
+  })())`)), {
+    maxHp: 78,
+    attack: 16,
+    defense: 8,
+    speed: 18,
+    maxCe: 150,
+    damageType: "strike",
+  });
+
+  dom.window.eval(`
+    const megumi = currentUnit();
+    megumi.x = 1;
+    megumi.y = 1;
+    megumi.z = 1;
+    calculateRanges();
+  `);
+  document.querySelector("#skillBtn").click();
+  clickAbility(document, "Divine Dogs");
+  dom.window.eval("handleTileClick(2, 1, 1)");
+
+  assert.equal(dom.window.eval("activeSummonsFor(currentUnit()).length"), 0);
+  assert.equal(dom.window.eval("currentUnit().acted"), false);
+  assert.ok(document.querySelectorAll(".tile.skill-support").length > 0);
+
+  dom.window.eval("handleTileClick(1, 2, 1)");
+
+  assert.equal(dom.window.eval("currentUnit().maxCe"), 90);
+  assert.equal(dom.window.eval("currentUnit().ce"), 90);
+  assert.equal(dom.window.eval("activeSummonsFor(currentUnit()).length"), 2);
+  assert.equal(dom.window.eval("turnEligibleUnits().some((unit) => unit.summonKind === 'divineDog')"), false);
+
+  dom.window.eval(`
+    const megumi = currentUnit();
+    const choso = livingUnits().find((unit) => unit.characterId === "choso");
+    const dogs = activeSummonsFor(megumi);
+    selectNextTurn([megumi]);
+    choso.hp = 100;
+    dogs[0].x = 1;
+    dogs[0].y = 2;
+    dogs[0].z = 1;
+    dogs[1].x = 1;
+    dogs[1].y = 3;
+    dogs[1].z = 1;
+    choso.x = 2;
+    choso.y = 2;
+    choso.z = 1;
+    calculateRanges();
+    handleTileClick(dogs[0].x, dogs[0].y, dogs[0].z);
+    useOffense(choso);
+  `);
+
+  assert.equal(dom.window.eval("currentUnit().ce"), 20);
+  assert.equal(dom.window.eval("currentUnit().damageType"), "slashing");
+  assert.ok(document.querySelectorAll(".tile.shared-actor-target").length > 0);
+
+  dom.window.eval(`
+    const megumi = turnController();
+    const choso = livingUnits().find((unit) => unit.characterId === "choso");
+    const secondDog = activeSummonsFor(megumi).find((unit) => !unit.acted);
+    secondDog.x = 2;
+    secondDog.y = 3;
+    secondDog.z = 1;
+    choso.x = 2;
+    choso.y = 2;
+    choso.z = 1;
+    calculateRanges();
+    handleTileClick(secondDog.x, secondDog.y, secondDog.z);
+    useOffense(choso);
+  `);
+
+  assert.equal(dom.window.eval("currentUnit().ce"), 20);
+  assert.equal(dom.window.eval("turnController().id.includes('megumi')"), true);
+
+  dom.window.close();
+});
+
+test("Megumi summons Nue on a chosen free tile and Lightning Strike hits around the target", async () => {
+  const dom = await loadGame();
+  const { document } = dom.window;
+  startMegumiVsChosoBattle(document);
+
+  dom.window.eval(`
+    stopInitiativeClock();
+    const megumi = livingUnits().find((unit) => unit.characterId === "megumi");
+    const choso = livingUnits().find((unit) => unit.characterId === "choso");
+    selectNextTurn([megumi]);
+    megumi.x = 1;
+    megumi.y = 1;
+    megumi.z = 1;
+    choso.x = 3;
+    choso.y = 1;
+    choso.z = 1;
+    calculateRanges();
+  `);
+
+  document.querySelector("#skillBtn").click();
+  clickAbility(document, "Nue");
+  dom.window.eval("handleTileClick(3, 1, 1)");
+
+  assert.equal(dom.window.eval("activeSummonsFor(currentUnit()).length"), 0);
+  assert.equal(dom.window.eval("currentUnit().acted"), false);
+
+  dom.window.eval("handleTileClick(3, 2, 1)");
+
+  assert.deepEqual(JSON.parse(dom.window.eval(`JSON.stringify((() => {
+    const megumi = currentUnit();
+    const nue = activeSummonsFor(megumi).find((unit) => unit.summonKind === "nue");
+    return {
+      megumiMaxCe: megumi.maxCe,
+      megumiCe: megumi.ce,
+      nueX: nue.x,
+      nueY: nue.y,
+      nueZ: nue.z,
+      nueAttack: nue.attack,
+      flying: nue.statuses.includes("flying"),
+    };
+  })())`)), {
+    megumiMaxCe: 130,
+    megumiCe: 130,
+    nueX: 3,
+    nueY: 2,
+    nueZ: 1,
+    nueAttack: 16,
+    flying: true,
+  });
+
+  dom.window.eval(`
+    const megumi = currentUnit();
+    const nue = activeSummonsFor(megumi).find((unit) => unit.summonKind === "nue");
+    const choso = livingUnits().find((unit) => unit.characterId === "choso");
+    selectNextTurn([megumi]);
+    nue.x = 2;
+    nue.y = 1;
+    nue.z = 1;
+    megumi.x = 4;
+    megumi.y = 1;
+    megumi.z = 1;
+    megumi.hp = 100;
+    choso.x = 3;
+    choso.y = 1;
+    choso.z = 1;
+    choso.hp = 100;
+    calculateRanges();
+    handleTileClick(nue.x, nue.y, nue.z);
+  `);
+
+  assert.equal(dom.window.eval("currentUnit().summonKind"), "nue");
+  document.querySelector("#skillBtn").click();
+  clickAbility(document, "Lightning Strike");
+  dom.window.eval("handleTileClick(3, 1, 1)");
+
+  assert.ok(dom.window.eval('livingUnits().find((unit) => unit.characterId === "choso").hp') <= 80);
+  assert.ok(dom.window.eval('livingUnits().find((unit) => unit.characterId === "megumi").hp') < 100);
+  assert.equal(dom.window.eval("currentUnit().characterId"), "megumi");
+  assert.equal(dom.window.eval("activeSummonsFor(currentUnit()).length"), 0);
+
+  dom.window.close();
+});
+
+test("Megumi can summon Mahoraga, who adapts to damage and unlocks World Cutting Slash", async () => {
+  const dom = await loadGame();
+  const { document } = dom.window;
+  startMegumiVsChosoBattle(document);
+
+  dom.window.eval(`
+    stopInitiativeClock();
+    const megumi = livingUnits().find((unit) => unit.characterId === "megumi");
+    const choso = livingUnits().find((unit) => unit.characterId === "choso");
+    selectNextTurn([megumi]);
+    megumi.megumiTurnsTaken = 6;
+    megumi.hp = Math.floor(megumi.maxHp * 0.19);
+    megumi.ce = 150;
+    megumi.maxCe = 150;
+    megumi.x = 1;
+    megumi.y = 1;
+    megumi.z = 1;
+    choso.x = 3;
+    choso.y = 1;
+    choso.z = 1;
+    megumi.megumiDamageMemory = [{ attackerId: choso.id, megumiTurn: 6 }];
+    calculateRanges();
+    summonMahoraga(megumi, getAbility(megumi, "summonMahoraga"));
+  `);
+
+  assert.equal(dom.window.eval('unitAt(1, 1, 1).characterId'), "megumi");
+  assert.equal(dom.window.eval('unitAt(1, 1, 1).hp'), 0);
+  assert.equal(dom.window.eval("currentUnit().isMahoraga"), true);
+  assert.equal(dom.window.eval("currentUnit().allowedTargetIds.length"), 1);
+  assert.equal(dom.window.eval("currentUnit().allowedTargetIds[0].includes('choso')"), true);
+
+  dom.window.eval(`
+    const mahoraga = currentUnit();
+    const choso = livingUnits().find((unit) => unit.characterId === "choso");
+    performAttack(choso, mahoraga, "test slash", { attackMultiplier: 1, damageType: "slashing", triggersCounterattack: false, canBlackFlash: false });
+  `);
+
+  assert.equal(dom.window.eval("currentUnit().adaptations.slashing"), 1);
+
+  dom.window.eval(`
+    const mahoraga = currentUnit();
+    const choso = livingUnits().find((unit) => unit.characterId === "choso");
+    mahoraga.adaptations = { slashing: 6, strike: 2 };
+    mahoraga.acted = false;
+    mahoraga.moved = false;
+    choso.hp = 100;
+    choso.x = mahoraga.x + 1;
+    choso.y = mahoraga.y;
+    choso.z = mahoraga.z;
+    calculateRanges();
+    render();
+  `);
+
+  assert.equal(dom.window.eval("getAbilities(currentUnit()).some((ability) => ability.id === 'worldCuttingSlash')"), true);
+  document.querySelector("#skillBtn").click();
+  clickAbility(document, "World Cutting Slash");
+  dom.window.eval("handleTileClick(currentUnit().x, currentUnit().y, currentUnit().z)");
+  assert.ok(dom.window.eval('livingUnits().find((unit) => unit.characterId === "choso").hp') < 100);
+
+  dom.window.close();
+});
+
+test("Mahito unlocks his Ultimate, transforms, stacks bleeding, and loses form at 0 CE", async () => {
+  const dom = await loadGame();
+  const { document } = dom.window;
+  dom.window.Math.random = () => 0;
+  startMahitoVsChosoBattle(document);
+
+  dom.window.eval(`
+    stopInitiativeClock();
+    const mahito = livingUnits().find((unit) => unit.characterId === "mahito");
+    const choso = livingUnits().find((unit) => unit.characterId === "choso");
+    selectNextTurn([mahito]);
+    mahito.x = 1;
+    mahito.y = 1;
+    mahito.z = 1;
+    choso.x = 2;
+    choso.y = 1;
+    choso.z = 1;
+    choso.hp = 100;
+    choso.maxHp = 100;
+    calculateRanges();
+    useOffense(choso);
+    mahito.acted = false;
+    mahito.moved = false;
+    choso.hp = 100;
+    calculateRanges();
+    useOffense(choso);
+  `);
+
+  assert.equal(dom.window.eval("currentUnit().mahitoBlackFlashes"), 2);
+  assert.equal(dom.window.eval("mahitoUltimateUnlocked(currentUnit())"), true);
+  assert.match(document.querySelector("#log").textContent, /unlocks their Ultimate/);
+
+  dom.window.eval(`
+    const mahito = currentUnit();
+    mahito.hp = Math.floor(mahito.maxHp * 0.6);
+    mahito.ce = 80;
+    mahito.acted = false;
+    mahito.moved = false;
+    calculateRanges();
+    render();
+  `);
+  document.querySelector("#skillBtn").click();
+  clickAbility(document, "Instant Spirit Body");
+  dom.window.eval("handleTileClick(1, 1, 1)");
+
+  assert.deepEqual(JSON.parse(dom.window.eval(`JSON.stringify((() => {
+    const mahito = currentUnit();
+    return {
+      transformed: Boolean(mahito.activeEffects.mahitoTransformed),
+      ce: mahito.ce,
+      maxCe: mahito.maxCe,
+      attack: mahito.attack,
+      defense: mahito.defense,
+      speed: mahito.speed,
+      abilities: getAbilities(mahito).map((ability) => ability.id),
+    };
+  })())`)), {
+    transformed: true,
+    ce: 150,
+    maxCe: 150,
+    attack: 21,
+    defense: 10,
+    speed: 28,
+    abilities: ["predatorDash", "blindSpotStrike"],
+  });
+
+  dom.window.eval(`
+    const mahito = currentUnit();
+    const choso = livingUnits().find((unit) => unit.characterId === "choso");
+    mahito.acted = false;
+    mahito.moved = false;
+    choso.hp = 100;
+    choso.x = mahito.x + 1;
+    choso.y = mahito.y;
+    choso.z = mahito.z;
+    calculateRanges();
+    useOffense(choso);
+    mahito.acted = false;
+    mahito.moved = false;
+    calculateRanges();
+    useOffense(choso);
+  `);
+
+  assert.equal(dom.window.eval('livingUnits().find((unit) => unit.characterId === "choso").bleedingStacks'), 2);
+
+  dom.window.eval(`
+    const mahito = currentUnit();
+    const choso = livingUnits().find((unit) => unit.characterId === "choso");
+    mahito.ce = 5;
+    mahito.hp = 50;
+    performAttack(choso, mahito, "test strike", { attackMultiplier: 1, triggersCounterattack: false, canBlackFlash: false });
+  `);
+
+  assert.equal(dom.window.eval("Boolean(currentUnit().activeEffects.mahitoTransformed)"), false);
+  assert.equal(dom.window.eval("currentUnit().ce"), 0);
+  assert.equal(dom.window.eval("currentUnit().attack"), 8);
+  assert.equal(dom.window.eval("currentUnit().defense"), 4);
+  assert.equal(dom.window.eval("currentUnit().speed"), 8);
+
+  dom.window.close();
+});
 
 test("Toji has no CE, weapon locks, spear thrust knockback, and katana bleeding", async () => {
   const dom = await loadGame();
@@ -370,8 +927,11 @@ test("Toji has no CE, weapon locks, spear thrust knockback, and katana bleeding"
   `);
 
   assert.equal(dom.window.eval("currentUnit().maxCe"), 0);
+  assert.equal(dom.window.eval("currentUnit().maxHp"), 72);
+  assert.equal(dom.window.eval("currentUnit().defense"), 5);
+  assert.equal(dom.window.eval("currentUnit().mobility"), 3);
   assert.equal(dom.window.eval("currentUnit().weapon"), "invertedSpear");
-  assert.match(document.querySelector("#unitCard").textContent, /Sin CE/);
+  assert.match(document.querySelector("#unitCard").textContent, /No CE/);
 
   document.querySelector("#skillBtn").click();
   clickAbility(document, "Spear Thrust");
@@ -392,7 +952,7 @@ test("Toji has no CE, weapon locks, spear thrust knockback, and katana bleeding"
     calculateRanges();
   `);
   document.querySelector("#skillBtn").click();
-  clickAbility(document, "Equipar katana");
+  clickAbility(document, "Equip Split Soul Katana");
   assert.equal(dom.window.eval("currentUnit().weapon"), "splitSoulKatana");
   assert.equal(dom.window.eval('weaponLock(currentUnit(), "invertedSpear")'), 3);
   assert.equal(dom.window.eval('weaponLock(currentUnit(), "splitSoulKatana")'), 3);
@@ -453,7 +1013,7 @@ test("Toji can use Chain Weapon sweep and Phantom Step between floors", async ()
   dom.window.close();
 });
 
-test("Miwa counterattacks and recovers CE with Dedicacion", async () => {
+test("Miwa counterattacks and recovers CE with Dedication", async () => {
   const dom = await loadGame();
   const { document } = dom.window;
   dom.window.Math.random = () => 0;
@@ -475,12 +1035,12 @@ test("Miwa counterattacks and recovers CE with Dedicacion", async () => {
     red.y = blue.y;
     red.z = blue.z;
     red.attack = 20;
-    performAttack(red, blue, "ataque normal");
+    performAttack(red, blue, "basic attack");
   `);
 
   assert.equal(afterAbilityCe, 25);
   assert.equal(dom.window.eval("currentUnit().hp"), miwaHpBefore - 16);
-  assert.equal(dom.window.eval('livingUnits().find((unit) => unit.team === "red").hp'), redHpBefore - 7);
+  assert.equal(dom.window.eval('livingUnits().find((unit) => unit.team === "red").hp'), redHpBefore - 6);
   assert.equal(dom.window.eval("currentUnit().ce"), 30);
 
   dom.window.close();
@@ -541,7 +1101,7 @@ test("Miwa simple domain hits an enemy ending turn in the surrounding zone", asy
     stopInitiativeClock();
   `);
 
-  assert.equal(dom.window.eval('livingUnits().find((unit) => unit.team === "red").hp'), redHpBefore - 7);
+  assert.equal(dom.window.eval('livingUnits().find((unit) => unit.team === "red").hp'), redHpBefore - 6);
 
   dom.window.close();
 });
@@ -550,12 +1110,12 @@ test("Yuji has tuned stats, gains Focus, can Black Flash, and loses Focus withou
   const dom = await loadGame();
   const { document } = dom.window;
 
-  clickButton(document, "Iniciar juego");
+  clickButton(document, "Start Game");
   clickRosterCard(document, "Yuji");
-  clickButton(document, "Equipo rojo");
+  clickButton(document, "Red Team");
   clickRosterCard(document, "Choso");
-  clickButton(document, "Elegir mapa");
-  clickButton(document, "Empezar batalla");
+  clickButton(document, "Choose Map");
+  clickButton(document, "Start Battle");
   dom.window.eval('stopInitiativeClock(); selectNextTurn([livingUnits().find((unit) => unit.characterId === "yuji")]);');
 
   assert.deepEqual(JSON.parse(dom.window.eval(`JSON.stringify((() => {
@@ -570,8 +1130,8 @@ test("Yuji has tuned stats, gains Focus, can Black Flash, and loses Focus withou
       focus: yuji.focus,
     };
   })())`)), {
-    maxHp: 55,
-    attack: 23,
+    maxHp: 72,
+    attack: 20,
     defense: 6,
     speed: 18,
     mobility: 3,
@@ -595,7 +1155,7 @@ test("Yuji has tuned stats, gains Focus, can Black Flash, and loses Focus withou
   `);
 
   assert.equal(dom.window.eval("currentUnit().focus"), 1);
-  assert.equal(dom.window.eval('livingUnits().find((unit) => unit.team === "red").hp'), 18);
+  assert.equal(dom.window.eval('livingUnits().find((unit) => unit.team === "red").hp'), 44);
   assert.match(document.querySelector("#log").textContent, /Black Flash/);
 
   dom.window.eval(`
@@ -614,12 +1174,12 @@ test("Choso starts in Blood Mode, attacks at range, applies Poison, and poison t
   const dom = await loadGame();
   const { document } = dom.window;
 
-  clickButton(document, "Iniciar juego");
+  clickButton(document, "Start Game");
   clickRosterCard(document, "Choso");
-  clickButton(document, "Equipo rojo");
+  clickButton(document, "Red Team");
   clickRosterCard(document, "Miwa");
-  clickButton(document, "Elegir mapa");
-  clickButton(document, "Empezar batalla");
+  clickButton(document, "Choose Map");
+  clickButton(document, "Start Battle");
   dom.window.eval('stopInitiativeClock(); selectNextTurn([livingUnits().find((unit) => unit.characterId === "choso")]);');
 
   assert.deepEqual(JSON.parse(dom.window.eval(`JSON.stringify((() => {
@@ -635,8 +1195,8 @@ test("Choso starts in Blood Mode, attacks at range, applies Poison, and poison t
       passive: getPassive(choso).id,
     };
   })())`)), {
-    maxHp: 58,
-    attack: 21,
+    maxHp: 78,
+    attack: 18,
     defense: 4,
     effectiveDefense: 3,
     speed: 16,
@@ -644,7 +1204,9 @@ test("Choso starts in Blood Mode, attacks at range, applies Poison, and poison t
     stance: "blood",
     passive: "poisonedBlood",
   });
-  assert.match(document.querySelector("#unitCard").textContent, /Modo sangre/);
+  assert.match(document.querySelector("#unitCard").textContent, /Defense3/);
+  assert.doesNotMatch(document.querySelector("#unitCard").textContent, /Defense3\s*\(4 x0\.85\)/);
+  assert.match(document.querySelector("#unitCard").textContent, /Blood Mode/);
 
   dom.window.eval(`
     const choso = currentUnit();
@@ -659,8 +1221,8 @@ test("Choso starts in Blood Mode, attacks at range, applies Poison, and poison t
 
   assert.equal(dom.window.eval('livingUnits().find((unit) => unit.team === "red").poisonStacks'), 1);
   assert.equal(dom.window.eval('livingUnits().find((unit) => unit.team === "red").poisonTurnsRemaining'), 1);
-  assert.equal(dom.window.eval('livingUnits().find((unit) => unit.team === "red").hp'), 25);
-  assert.match(document.querySelector("#log").textContent, /Veneno/);
+  assert.equal(dom.window.eval('livingUnits().find((unit) => unit.team === "red").hp'), 48);
+  assert.match(document.querySelector("#log").textContent, /Poison/);
 
   dom.window.eval(`
     const target = currentUnit();
@@ -669,8 +1231,8 @@ test("Choso starts in Blood Mode, attacks at range, applies Poison, and poison t
 
   assert.equal(dom.window.eval("currentUnit().poisonStacks"), 0);
   assert.equal(dom.window.eval("currentUnit().poisonTurnsRemaining"), 0);
-  assert.equal(dom.window.eval("currentUnit().hp"), 21);
-  assert.match(document.querySelector("#log").textContent, /se disipa/);
+  assert.equal(dom.window.eval("currentUnit().hp"), 44);
+  assert.match(document.querySelector("#log").textContent, /Poison wears off/);
 
   dom.window.close();
 });
@@ -679,12 +1241,12 @@ test("Choso can switch to Combat Mode for melee damage and defense", async () =>
   const dom = await loadGame();
   const { document } = dom.window;
 
-  clickButton(document, "Iniciar juego");
+  clickButton(document, "Start Game");
   clickRosterCard(document, "Choso");
-  clickButton(document, "Equipo rojo");
+  clickButton(document, "Red Team");
   clickRosterCard(document, "Miwa");
-  clickButton(document, "Elegir mapa");
-  clickButton(document, "Empezar batalla");
+  clickButton(document, "Choose Map");
+  clickButton(document, "Start Battle");
   dom.window.eval('stopInitiativeClock(); selectNextTurn([livingUnits().find((unit) => unit.characterId === "choso")]);');
 
   dom.window.eval('useSelfAbility(getAbility(currentUnit(), "switchChosoStance"))');
@@ -706,7 +1268,7 @@ test("Choso can switch to Combat Mode for melee damage and defense", async () =>
     useOffense(target);
   `);
 
-  assert.equal(dom.window.eval('livingUnits().find((unit) => unit.team === "red").hp'), 22);
+  assert.equal(dom.window.eval('livingUnits().find((unit) => unit.team === "red").hp'), 46);
   assert.equal(dom.window.eval('livingUnits().find((unit) => unit.team === "red").poisonStacks'), 0);
 
   dom.window.close();
@@ -716,13 +1278,13 @@ test("Choso uses Piercing Blood through a line and Supernova in an area", async 
   const dom = await loadGame();
   const { document } = dom.window;
 
-  clickButton(document, "Iniciar juego");
+  clickButton(document, "Start Game");
   clickRosterCard(document, "Choso");
-  clickButton(document, "Equipo rojo");
+  clickButton(document, "Red Team");
   clickRosterCard(document, "Miwa");
   clickRosterCard(document, "Choso");
-  clickButton(document, "Elegir mapa");
-  clickButton(document, "Empezar batalla");
+  clickButton(document, "Choose Map");
+  clickButton(document, "Start Battle");
   dom.window.eval('stopInitiativeClock(); selectNextTurn([livingUnits().find((unit) => unit.team === "blue" && unit.characterId === "choso")]);');
 
   dom.window.eval(`
@@ -737,7 +1299,7 @@ test("Choso uses Piercing Blood through a line and Supernova in an area", async 
     calculateRanges();
   `);
   document.querySelector("#skillBtn").click();
-  clickAbility(document, "Sangre perforante");
+  clickAbility(document, "Piercing Blood");
   dom.window.eval(`
     const target = livingUnits().find((unit) => unit.team === "red" && unit.characterId === "miwa");
     useOffense(target);
@@ -773,7 +1335,7 @@ test("Choso uses Piercing Blood through a line and Supernova in an area", async 
 
   dom.window.eval("currentUnit().acted = true; currentUnit().moved = true; render();");
   document.querySelector("#skillBtn").click();
-  clickAbility(document, "Activar Supernova");
+  clickAbility(document, "Detonate Supernova");
 
   assert.equal(dom.window.eval('livingUnits().find((unit) => unit.team === "blue" && unit.characterId === "choso").ce'), 65);
   assert.equal(dom.window.eval('abilityCooldown(livingUnits().find((unit) => unit.team === "blue" && unit.characterId === "choso"), "supernova")'), 5);
@@ -791,12 +1353,12 @@ test("Choso Supernova expires after three own turns and then starts cooldown", a
   const dom = await loadGame();
   const { document } = dom.window;
 
-  clickButton(document, "Iniciar juego");
+  clickButton(document, "Start Game");
   clickRosterCard(document, "Choso");
-  clickButton(document, "Equipo rojo");
+  clickButton(document, "Red Team");
   clickRosterCard(document, "Miwa");
-  clickButton(document, "Elegir mapa");
-  clickButton(document, "Empezar batalla");
+  clickButton(document, "Choose Map");
+  clickButton(document, "Start Battle");
   dom.window.eval('stopInitiativeClock(); selectNextTurn([livingUnits().find((unit) => unit.characterId === "choso")]);');
 
   document.querySelector("#skillBtn").click();
@@ -822,7 +1384,7 @@ test("Choso Supernova expires after three own turns and then starts cooldown", a
   assert.equal(dom.window.eval('activeSupernovaForUnit(livingUnits().find((unit) => unit.characterId === "choso"))'), undefined);
   assert.equal(dom.window.eval('abilityCooldown(livingUnits().find((unit) => unit.characterId === "choso"), "supernova")'), 5);
   assert.equal(document.querySelectorAll(".supernova-orb").length, 0);
-  assert.match(document.querySelector("#log").textContent, /desaparece/);
+  assert.match(document.querySelector("#log").textContent, /disappears/);
 
   dom.window.close();
 });
@@ -831,12 +1393,12 @@ test("attack, defense, and speed scale linearly from CE", async () => {
   const dom = await loadGame();
   const { document } = dom.window;
 
-  clickButton(document, "Iniciar juego");
+  clickButton(document, "Start Game");
   clickRosterCard(document, "Yuji");
-  clickButton(document, "Equipo rojo");
+  clickButton(document, "Red Team");
   clickRosterCard(document, "Choso");
-  clickButton(document, "Elegir mapa");
-  clickButton(document, "Empezar batalla");
+  clickButton(document, "Choose Map");
+  clickButton(document, "Start Battle");
   dom.window.eval('stopInitiativeClock(); selectNextTurn([livingUnits().find((unit) => unit.characterId === "yuji")]); currentUnit().ce = 0; render();');
 
   assert.deepEqual(JSON.parse(dom.window.eval(`JSON.stringify((() => {
@@ -847,12 +1409,12 @@ test("attack, defense, and speed scale linearly from CE", async () => {
       speed: effectiveSpeed(yuji),
     };
   })())`)), {
-    attack: 17,
+    attack: 15,
     defense: 4,
     speed: 13,
   });
-  assert.match(document.querySelector("#unitCard").textContent, /Ataque17/);
-  assert.match(document.querySelector("#unitCard").textContent, /Velocidad13/);
+  assert.match(document.querySelector("#unitCard").textContent, /Attack15/);
+  assert.match(document.querySelector("#unitCard").textContent, /Speed13/);
 
   dom.window.close();
 });
@@ -861,13 +1423,13 @@ test("Sukuna Fingers can be picked up, transferred to Yuji, and tracked by giver
   const dom = await loadGame();
   const { document } = dom.window;
 
-  clickButton(document, "Iniciar juego");
+  clickButton(document, "Start Game");
   clickRosterCard(document, "Yuji");
   clickRosterCard(document, "Miwa");
-  clickButton(document, "Equipo rojo");
+  clickButton(document, "Red Team");
   clickRosterCard(document, "Choso");
-  clickButton(document, "Elegir mapa");
-  clickButton(document, "Empezar batalla");
+  clickButton(document, "Choose Map");
+  clickButton(document, "Start Battle");
 
   dom.window.eval(`
     stopInitiativeClock();
@@ -906,12 +1468,12 @@ test("dead Yuji transforms into Sukuna on the second eligible turn with finger m
   const dom = await loadGame();
   const { document } = dom.window;
 
-  clickButton(document, "Iniciar juego");
+  clickButton(document, "Start Game");
   clickRosterCard(document, "Yuji");
-  clickButton(document, "Equipo rojo");
+  clickButton(document, "Red Team");
   clickRosterCard(document, "Choso");
-  clickButton(document, "Elegir mapa");
-  clickButton(document, "Empezar batalla");
+  clickButton(document, "Choose Map");
+  clickButton(document, "Start Battle");
 
   dom.window.eval(`
     stopInitiativeClock();
@@ -930,8 +1492,8 @@ test("dead Yuji transforms into Sukuna on the second eligible turn with finger m
     selectNextTurn([yuji]);
   `);
 
-  assert.equal(dom.window.eval('livingUnits().find((unit) => unit.characterId === "yuji").hp'), 22);
-  assert.equal(dom.window.eval('livingUnits().find((unit) => unit.characterId === "choso").hp'), 65);
+  assert.equal(dom.window.eval('livingUnits().find((unit) => unit.characterId === "yuji").hp'), 29);
+  assert.equal(dom.window.eval('livingUnits().find((unit) => unit.characterId === "choso").hp'), 70);
   assert.match(document.querySelector("#log").textContent, /Sukuna/);
 
   dom.window.close();

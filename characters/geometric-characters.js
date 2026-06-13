@@ -37,9 +37,30 @@ const chosoStats = {
 };
 
 const tojiStats = {
-  maxHp: "normal",
+  maxHp: "poco",
   speed: "mucho",
   attack: "mucho",
+  defense: "poco",
+};
+
+const todoStats = {
+  maxHp: "bastante",
+  speed: "normal",
+  attack: "normal",
+  defense: "bastante",
+};
+
+const mahitoStats = {
+  maxHp: "mucho",
+  speed: "poco",
+  attack: "poco",
+  defense: "normal",
+};
+
+const megumiStats = {
+  maxHp: "poco",
+  speed: "bastantePoco",
+  attack: "poco",
   defense: "normal",
 };
 
@@ -47,11 +68,12 @@ window.GameData.characters = [
   {
     id: "megumi",
     name: "Megumi",
-    cost: 4,
+    cost: 5,
     model: { shape: "diamond" },
-    statProfile: normalStats(),
-    stats: window.GameData.statsFromProfile(4, normalStats()),
-    abilityIds: ["strike", "guard"],
+    statProfile: megumiStats,
+    stats: window.GameData.statsFromProfile(5, megumiStats, { maxCe: 150 }),
+    abilityIds: ["summonDivineDogs", "summonNue", "summonMaxElephant", "summonMahoraga"],
+    damageType: "strike",
   },
   {
     id: "toji",
@@ -59,7 +81,7 @@ window.GameData.characters = [
     cost: 4,
     model: { shape: "triangle" },
     statProfile: tojiStats,
-    stats: window.GameData.statsFromProfile(4, tojiStats, { maxCe: 0 }),
+    stats: window.GameData.statsFromProfile(4, tojiStats, { mobility: 3, maxCe: 0 }),
     abilityIds: [
       "equipInvertedSpear",
       "equipSplitSoulKatana",
@@ -70,15 +92,26 @@ window.GameData.characters = [
       "phantomStep",
     ],
     defaultWeapon: "invertedSpear",
+    damageType: "slashing",
   },
   {
     id: "mahito",
     name: "Mahito",
     cost: 5,
     model: { shape: "circle" },
-    statProfile: normalStats(),
-    stats: window.GameData.statsFromProfile(5, normalStats()),
-    abilityIds: ["strike", "guard"],
+    statProfile: mahitoStats,
+    stats: window.GameData.statsFromProfile(5, mahitoStats, { maxCe: 100 }),
+    abilityIds: [
+      "soulTouch",
+      "distortedWorm",
+      "idleTransfiguration",
+      "selfEmbodiment",
+      "instantSpiritBody",
+      "predatorDash",
+      "blindSpotStrike",
+    ],
+    passiveId: "blackFlashPotential",
+    damageType: "strike",
   },
   {
     id: "yuji",
@@ -89,6 +122,7 @@ window.GameData.characters = [
     stats: window.GameData.statsFromProfile(3, yujiStats, { mobility: 3, maxCe: 100 }),
     abilityIds: ["strike", "guard"],
     passiveId: "focus",
+    damageType: "strike",
   },
   {
     id: "miwa",
@@ -99,6 +133,7 @@ window.GameData.characters = [
     stats: window.GameData.statsFromProfile(1, normalStats(), { maxCe: 50 }),
     abilityIds: ["simpleDomain", "counterattack"],
     passiveId: "dedication",
+    damageType: "slashing",
   },
   {
     id: "choso",
@@ -110,5 +145,16 @@ window.GameData.characters = [
     abilityIds: ["switchChosoStance", "piercingBlood", "supernova"],
     passiveId: "poisonedBlood",
     defaultStance: "blood",
+    damageType: "strike",
+  },
+  {
+    id: "todo",
+    name: "Aoi Todo",
+    cost: 3,
+    model: { shape: "diamond" },
+    statProfile: todoStats,
+    stats: window.GameData.statsFromProfile(3, todoStats, { maxCe: 100 }),
+    abilityIds: ["boogieWoogie", "forcedSwap"],
+    damageType: "strike",
   },
 ];

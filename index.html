@@ -1,30 +1,30 @@
 <!doctype html>
-<html lang="es">
+<html lang="en">
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Geometria Tactics</title>
-    <link rel="stylesheet" href="styles.css?v=38" />
+    <title>Jujutsu Tactics</title>
+    <link rel="stylesheet" href="styles.css?v=48" />
   </head>
   <body>
     <main class="app">
       <section class="topbar">
         <div>
-          <h1>Geometria Tactics</h1>
-          <p id="phaseText">Preparando batalla</p>
+          <h1>Jujutsu Tactics</h1>
+          <p id="phaseText">Preparing battle</p>
         </div>
-        <div class="scoreboard" aria-label="Estado de los equipos">
-          <span class="team blue">Azul</span>
-          <span id="roundText">Ronda 1</span>
-          <span class="team red">Rojo</span>
+        <div class="scoreboard" aria-label="Team status">
+          <span class="team blue">Blue</span>
+          <span id="roundText">Round 1</span>
+          <span class="team red">Red</span>
         </div>
       </section>
 
       <section class="setup-screen" id="setupScreen" aria-live="polite">
         <div class="setup-copy">
-          <div class="panel-title" id="setupEyebrow">Inicio</div>
-          <h2 id="setupTitle">Geometria Tactics</h2>
-          <p id="setupText">Prepara los equipos antes de entrar al edificio destruido.</p>
+          <div class="panel-title" id="setupEyebrow">Start</div>
+          <h2 id="setupTitle">Jujutsu Tactics</h2>
+          <p id="setupText">Prepare both teams before entering the ruined building.</p>
         </div>
         <div id="setupContent" class="setup-content"></div>
         <div id="setupActions" class="setup-actions"></div>
@@ -32,40 +32,40 @@
 
       <section class="battlefield hidden" id="battlefield">
         <aside class="panel roster-panel">
-          <div class="panel-title">Unidades</div>
+          <div class="panel-title">Units</div>
           <div id="teamList" class="team-list"></div>
-          <div class="panel-title small">Registro</div>
+          <div class="panel-title small">Battle Log</div>
           <ol id="log" class="log" aria-live="polite"></ol>
         </aside>
 
         <section class="board-area">
           <div class="board-shell">
-            <div class="stacked-boards" id="board" aria-label="Tableros tacticos apilados"></div>
+            <div class="stacked-boards" id="board" aria-label="Stacked tactical boards"></div>
           </div>
           <div class="panel initiative-panel">
-            <div class="panel-title">Barra de accion</div>
-            <div class="initiative-track" id="initiativeTrack" aria-label="Barra de accion"></div>
+            <div class="panel-title">Action Bar</div>
+            <div class="initiative-track" id="initiativeTrack" aria-label="Action bar"></div>
           </div>
         </section>
 
         <aside class="panel command-panel">
-          <div class="panel-title">Unidad</div>
+          <div class="panel-title">Unit</div>
           <div id="unitCard" class="unit-card"></div>
           <div class="commands">
-            <button id="attackBtn" type="button">Atacar</button>
-            <button id="skillBtn" type="button">Habilidad</button>
-            <button id="specialBtn" type="button">Especial</button>
-            <button id="stairsUpBtn" type="button">Subir</button>
-            <button id="stairsDownBtn" type="button">Bajar</button>
-            <button id="endBtn" type="button">Terminar</button>
-            <button id="restartBtn" type="button">Reiniciar</button>
+            <button id="attackBtn" type="button">Attack</button>
+            <button id="skillBtn" type="button">Technique</button>
+            <button id="specialBtn" type="button">Special</button>
+            <button id="stairsUpBtn" type="button">Go Up</button>
+            <button id="stairsDownBtn" type="button">Go Down</button>
+            <button id="endBtn" type="button">End Turn</button>
+            <button id="restartBtn" type="button">Restart</button>
           </div>
           <div id="transferPanel" class="transfer-panel hidden">
-            <label for="transferAmount">Dedos a entregar</label>
+            <label for="transferAmount">Fingers to transfer</label>
             <div class="transfer-controls">
               <input id="transferAmount" type="number" min="1" step="1" />
-              <button id="confirmTransferBtn" type="button">Entregar</button>
-              <button id="cancelTransferBtn" type="button">Cancelar</button>
+              <button id="confirmTransferBtn" type="button">Transfer</button>
+              <button id="cancelTransferBtn" type="button">Cancel</button>
             </div>
           </div>
           <div id="abilityMenu" class="ability-menu hidden"></div>
@@ -74,10 +74,10 @@
       </section>
     </main>
 
-    <script src="maps/placeholder-map.js?v=38"></script>
-    <script src="statistics/base-statistics.js?v=38"></script>
-    <script src="abilities/basic-abilities.js?v=38"></script>
-    <script src="characters/geometric-characters.js?v=38"></script>
-    <script src="game.js?v=38"></script>
+    <script src="maps/placeholder-map.js?v=48"></script>
+    <script src="statistics/base-statistics.js?v=48"></script>
+    <script src="abilities/basic-abilities.js?v=48"></script>
+    <script src="characters/geometric-characters.js?v=48"></script>
+    <script src="game.js?v=48"></script>
   </body>
 </html>

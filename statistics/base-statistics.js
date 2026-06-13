@@ -10,9 +10,9 @@ window.GameData.statTiers = {
 
 window.GameData.baseStatsForCost = function baseStatsForCost(cost) {
   return {
-    maxHp: 40 + cost * 6,
+    maxHp: 60 + cost * 6,
     speed: 10 + cost * 2,
-    attack: 10 + cost * 3,
+    attack: 10 + cost * 2,
     defense: 3 + cost,
     mobility: 2,
     maxCe: 100,
@@ -24,7 +24,7 @@ window.GameData.statsFromProfile = function statsFromProfile(cost, profile = {},
   const tierValue = (stat) => window.GameData.statTiers[profile[stat] ?? "normal"] ?? 0;
 
   return {
-    maxHp: base.maxHp + tierValue("maxHp") * 3,
+    maxHp: base.maxHp + tierValue("maxHp") * 6,
     speed: base.speed + tierValue("speed") * 2,
     attack: base.attack + tierValue("attack") * 2,
     defense: base.defense + tierValue("defense"),
